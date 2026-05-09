@@ -1,26 +1,88 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Indigo accent ramp */
+  --np-indigo-50:  #EEF2FF;
+  --np-indigo-100: #E0E7FF;
+  --np-indigo-200: #C7D2FE;
+  --np-indigo-300: #A5B4FC;
+  --np-indigo-400: #818CF8;
+  --np-indigo-500: #6366F1;
+  --np-indigo-600: #4F46E5;
+  --np-indigo-700: #4338CA;
+
+  /* Status */
+  --np-deadline: #FBBF24;
+  --np-success:  #22C55E;
+  --np-danger:   #EF4444;
+  --np-info:     #3B82F6;
+
+  /* Font families (set by next/font variables) */
+  --np-font-sans: var(--font-inter), -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --np-font-mono: var(--font-jetbrains-mono), "SFMono-Regular", Menlo, Consolas, monospace;
+
+  /* Radii */
+  --np-radius-sm: 4px;
+  --np-radius-md: 6px;
+  --np-radius-lg: 8px;
+  --np-radius-xl: 12px;
+}
+
+/* Light surface */
+:root,
+[data-theme="light"] {
+  --np-surface:          #FFFFFF;
+  --np-surface-elevated: #FAFAFA;
+  --np-surface-deep:     #F1F1F3;
+  --np-border:           #E5E5E7;
+  --np-border-strong:    #D4D4D8;
+  --np-text-muted:       #71717A;
+  --np-text-body:        #44403C;
+  --np-text-strong:      #27272A;
+  --np-text-primary:     #18181B;
+  --np-accent:           var(--np-indigo-500);
+  --np-accent-hover:     var(--np-indigo-600);
+  --np-accent-fg:        #FFFFFF;
+  --np-accent-fill:      var(--np-indigo-50);
+  --np-accent-text:      var(--np-indigo-700);
+}
+
+/* Dark surface (app default) */
+[data-theme="dark"] {
+  --np-surface:          #0A0A0D;
+  --np-surface-elevated: #18181B;
+  --np-surface-deep:     #0F0F12;
+  --np-border:           #27272A;
+  --np-border-strong:    #3F3F46;
+  --np-text-muted:       #52525B;
+  --np-text-body:        #A3A3A3;
+  --np-text-strong:      #D4D4D8;
+  --np-text-primary:     #FAFAFA;
+  --np-accent:           var(--np-indigo-500);
+  --np-accent-hover:     var(--np-indigo-400);
+  --np-accent-fg:        #FFFFFF;
+  --np-accent-fill:      rgba(99, 102, 241, 0.12);
+  --np-accent-text:      var(--np-indigo-300);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-background: var(--np-surface);
+  --color-foreground: var(--np-text-primary);
+  --font-sans: var(--np-font-sans);
+  --font-mono: var(--np-font-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+*, *::before, *::after {
+  box-sizing: border-box;
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+html, body {
+  background: var(--np-surface);
+  color: var(--np-text-primary);
+  font-family: var(--np-font-sans);
+  font-size: 14px;
+  line-height: 1.55;
+  letter-spacing: -0.005em;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
