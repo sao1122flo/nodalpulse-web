@@ -24,7 +24,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   // Check if user has completed onboarding
   const [profile] = await db
-    .select()
+    .select({ userId: userProfiles.userId })
     .from(userProfiles)
     .where(eq(userProfiles.userId, session.user.id))
     .limit(1)

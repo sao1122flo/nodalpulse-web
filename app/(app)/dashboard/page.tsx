@@ -36,7 +36,15 @@ export default async function DashboardPage() {
   if (!session) redirect("/login")
 
   const [brief] = await db
-    .select()
+    .select({
+      id: briefs.id,
+      date: briefs.date,
+      model: briefs.model,
+      promptVer: briefs.promptVer,
+      citationCount: briefs.citationCount,
+      sendStatus: briefs.sendStatus,
+      sentAt: briefs.sentAt,
+    })
     .from(briefs)
     .where(
       and(
