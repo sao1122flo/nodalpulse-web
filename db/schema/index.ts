@@ -6,6 +6,7 @@ import {
   timestamp,
   date,
   integer,
+  json,
 } from "drizzle-orm/pg-core"
 
 // ---------------------------------------------------------------------------
@@ -57,7 +58,7 @@ export const userProfiles = pgTable("user_profiles", {
     .references(() => users.id, { onDelete: "cascade" }),
   marketRoles: text("market_roles").array().notNull().default([]),
   trackedDocketIds: uuid("tracked_docket_ids").array().notNull().default([]),
-  trackedTags: text("tracked_tags").array().notNull().default([]),
+  trackedTags: json("tracked_tags").$type<string[]>().notNull().default([]),
   emailFormat: text("email_format").notNull().default("html"),
 })
 
