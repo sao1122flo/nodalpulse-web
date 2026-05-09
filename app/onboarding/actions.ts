@@ -19,7 +19,6 @@ export async function saveProfile(data: {
       userId: session.user.id,
       marketRoles: [data.role],
       trackedTags: data.markets,
-      trackedDocketIds: [],
       emailFormat: "html",
     })
     .onConflictDoUpdate({
