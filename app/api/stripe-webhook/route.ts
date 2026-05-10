@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
       if (!userId || !stripeCustomerId || !stripeSubscriptionId) break
 
       const stripeSub = await stripe.subscriptions.retrieve(stripeSubscriptionId)
-      const currentPeriodEnd = new Date(stripeSub.current_period_end * 1000)
+      const currentPeriodEnd = new Date(stripeSub.items.data[0].current_period_end * 1000)
 
       await db
         .insert(subscriptions)
@@ -86,7 +86,7 @@ export async function POST(req: NextRequest) {
       const stripeSub = event.data.object
       const stripeSubscriptionId = stripeSub.id
       const status = stripeSub.status
-      const currentPeriodEnd = new Date(stripeSub.current_period_end * 1000)
+      const currentPeriodEnd = new Date(stripeSub.items.data[0].current_period_end * 1000)
 
       const [row] = await db
         .select({ userId: subscriptions.userId })
