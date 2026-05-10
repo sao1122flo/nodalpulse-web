@@ -1,22 +1,51 @@
 "use client"
 
-import { useState } from "react"
-import type { Metadata } from "next"
+import { useState, useEffect } from "react"
 import { authClient } from "@/lib/auth-client"
-
-// Note: metadata export doesn't work in client components — title is set via
-// the root layout's template. A separate server wrapper can wrap this if needed.
+import { MicrosoftSignInButton } from "./MicrosoftSignInButton"
+import { GoogleSignInButton } from "./GoogleSignInButton"
 
 export default function LoginPage() {
   const [email, setEmail] = useState("")
-  const [status, setStatus] = useState<"idle" | "loading" | "sent" | "error">("idle")
-  const [errorMsg, setErrorMsg] = useState("")
+  const [magicStatus, setMagicStatus] = useState<"idle" | "loading" | "sent" | "error">("idle")
+  const [magicError, setMagicError] = useState("")
+  const [showMagicLink, setShowMagicLink] = useState(false)
 
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+  // which OAuth provider is mid-handshake (null = none)
+  const [oauthProvider, setOAuthProvider] = useState<"microsoft" | "google" | null>(null)
+  const [oauthError, setOAuthError] = useState("")
+
+  // Check for OAuth error redirected back from provider
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const error = params.get("error")
+    if (error) {
+      setOAuthError("Sign-in cancelled. Try again?")
+      window.history.replaceState({}, "", window.location.pathname)
+    }
+  }, [])
+
+  const oauthBusy = oauthProvider !== null
+
+  async function handleOAuth(provider: "microsoft" | "google") {
+    setOAuthProvider(provider)
+    setOAuthError("")
+    const result = await authClient.signIn.social({
+      provider,
+      callbackURL: "/dashboard",
+    })
+    if (result?.error) {
+      setOAuthError("Sign-in cancelled. Try again?")
+      setOAuthProvider(null)
+    }
+    // on success the browser navigates away; state is never reset
+  }
+
+  async function handleMagicLink(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     if (!email) return
-    setStatus("loading")
-    setErrorMsg("")
+    setMagicStatus("loading")
+    setMagicError("")
 
     const result = await authClient.signIn.magicLink({
       email,
@@ -24,10 +53,10 @@ export default function LoginPage() {
     })
 
     if (result.error) {
-      setErrorMsg(result.error.message ?? "Something went wrong. Please try again.")
-      setStatus("error")
+      setMagicError(result.error.message ?? "Something went wrong. Please try again.")
+      setMagicStatus("error")
     } else {
-      setStatus("sent")
+      setMagicStatus("sent")
     }
   }
 
@@ -36,13 +65,10 @@ export default function LoginPage() {
       className="w-full max-w-[400px] mx-auto rounded-[var(--np-radius-lg)] border border-[var(--np-border)] bg-[var(--np-surface-elevated)] p-8"
       style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.4)" }}
     >
-      {/* Logotype */}
+      {/* Brand */}
       <div className="mb-6">
         <div className="flex items-center gap-2 mb-2">
-          <span
-            className="text-[var(--np-accent)] text-[10px] leading-none"
-            aria-hidden="true"
-          >
+          <span className="text-[var(--np-accent)] text-[10px] leading-none" aria-hidden="true">
             &#9632;
           </span>
           <span className="font-bold text-[var(--np-text-primary)] text-base tracking-tight">
@@ -54,20 +80,54 @@ export default function LoginPage() {
         </p>
       </div>
 
-      {status === "sent" ? (
-        /* Success state */
-        <div className="rounded-[var(--np-radius-md)] border border-[var(--np-border)] bg-[var(--np-surface-deep)] p-4">
-          <p className="text-[var(--np-text-strong)] text-[13px] leading-relaxed">
-            <span className="font-medium text-[var(--np-text-primary)]">Check your email</span>
-            {" — "}We sent a sign-in link to{" "}
-            <span className="font-medium text-[var(--np-accent-text)]">{email}</span>.
-            It expires in 15 minutes.
-          </p>
-        </div>
-      ) : (
-        /* Sign-in form */
-        <form onSubmit={handleSubmit} noValidate>
-          <div className="mb-4">
+      {/* OAuth buttons */}
+      <div className="flex flex-col gap-2.5">
+        <MicrosoftSignInButton
+          onClick={() => handleOAuth("microsoft")}
+          loading={oauthProvider === "microsoft"}
+          disabled={oauthBusy || magicStatus === "loading"}
+        />
+        <GoogleSignInButton
+          onClick={() => handleOAuth("google")}
+          loading={oauthProvider === "google"}
+          disabled={oauthBusy || magicStatus === "loading"}
+        />
+      </div>
+
+      {/* OAuth error */}
+      {oauthError && (
+        <p className="mt-2.5 text-[var(--np-text-muted)] text-[12px] text-center">
+          {oauthError}
+        </p>
+      )}
+
+      {/* Magic link toggle */}
+      <div className="mt-5">
+        {!showMagicLink ? (
+          <button
+            type="button"
+            onClick={() => setShowMagicLink(true)}
+            disabled={oauthBusy}
+            className="
+              w-full text-[var(--np-text-muted)] text-[12px] text-center
+              hover:text-[var(--np-text-body)] transition-colors
+              disabled:opacity-40 disabled:cursor-not-allowed
+              cursor-pointer
+            "
+          >
+            Or email me a magic link →
+          </button>
+        ) : magicStatus === "sent" ? (
+          <div className="rounded-[var(--np-radius-md)] border border-[var(--np-border)] bg-[var(--np-surface-deep)] p-4">
+            <p className="text-[var(--np-text-strong)] text-[13px] leading-relaxed">
+              <span className="font-medium text-[var(--np-text-primary)]">Check your email</span>
+              {" — "}We sent a sign-in link to{" "}
+              <span className="font-medium text-[var(--np-accent-text)]">{email}</span>.
+              It expires in 15 minutes.
+            </p>
+          </div>
+        ) : (
+          <form onSubmit={handleMagicLink} noValidate>
             <label
               htmlFor="email"
               className="block text-[var(--np-text-strong)] text-[13px] font-medium mb-1.5"
@@ -83,45 +143,41 @@ export default function LoginPage() {
               value={email}
               onChange={e => setEmail(e.target.value)}
               placeholder="you@company.com"
-              disabled={status === "loading"}
+              disabled={magicStatus === "loading"}
               className="
-                w-full h-9 px-3
+                w-full h-9 px-3 mb-2.5
                 rounded-[var(--np-radius-md)]
                 border border-[var(--np-border)]
                 bg-[var(--np-surface-deep)]
-                text-[var(--np-text-primary)]
-                text-[13px]
+                text-[var(--np-text-primary)] text-[13px]
                 placeholder:text-[var(--np-text-muted)]
-                outline-none
-                transition-colors
+                outline-none transition-colors
                 focus:border-[var(--np-accent)]
                 disabled:opacity-50 disabled:cursor-not-allowed
               "
             />
-            {status === "error" && errorMsg && (
-              <p className="mt-1.5 text-[var(--np-danger)] text-[12px]">{errorMsg}</p>
+            {magicStatus === "error" && magicError && (
+              <p className="mb-2 text-[var(--np-danger)] text-[12px]">{magicError}</p>
             )}
-          </div>
-
-          <button
-            type="submit"
-            disabled={status === "loading" || !email}
-            className="
-              w-full h-9
-              rounded-[var(--np-radius-md)]
-              bg-[var(--np-accent)]
-              text-[var(--np-accent-fg)]
-              text-[13px] font-medium
-              transition-colors
-              hover:bg-[var(--np-accent-hover)]
-              disabled:opacity-50 disabled:cursor-not-allowed
-              cursor-pointer
-            "
-          >
-            {status === "loading" ? "Sending…" : "Send sign-in link"}
-          </button>
-        </form>
-      )}
+            <button
+              type="submit"
+              disabled={magicStatus === "loading" || !email}
+              className="
+                w-full h-9
+                rounded-[var(--np-radius-md)]
+                bg-[var(--np-accent)]
+                text-[var(--np-accent-fg)] text-[13px] font-medium
+                transition-colors
+                hover:bg-[var(--np-accent-hover)]
+                disabled:opacity-50 disabled:cursor-not-allowed
+                cursor-pointer
+              "
+            >
+              {magicStatus === "loading" ? "Sending…" : "Send sign-in link"}
+            </button>
+          </form>
+        )}
+      </div>
 
       {/* Legal */}
       <p className="mt-6 text-[var(--np-text-muted)] text-[11px] text-center leading-relaxed">
