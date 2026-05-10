@@ -2,6 +2,10 @@ import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { headers } from "next/headers"
 import { auth } from "@/lib/auth"
+import { db } from "@/db/client"
+import { subscriptions } from "@/db/schema"
+import { eq } from "drizzle-orm"
+import { createCheckoutSession, createPortalSession } from "./actions"
 
 export const metadata: Metadata = { title: "Settings" }
 
@@ -66,9 +70,35 @@ function FieldRow({
   )
 }
 
-export default async function SettingsPage() {
+function formatPeriodEnd(d: Date): string {
+  return d.toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  })
+}
+
+export default async function SettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ checkout?: string }>
+}) {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session) redirect("/login")
+
+  const params = await searchParams
+  const checkoutDone = params.checkout === "success"
+
+  const [sub] = await db
+    .select({
+      status: subscriptions.status,
+      stripeCustomerId: subscriptions.stripeCustomerId,
+      currentPeriodEnd: subscriptions.currentPeriodEnd,
+    })
+    .from(subscriptions)
+    .where(eq(subscriptions.userId, session.user.id))
+    .limit(1)
 
   return (
     <div className="px-8 py-8 max-w-2xl">
@@ -120,11 +150,127 @@ export default async function SettingsPage() {
             title="Billing"
             description="Manage your subscription and payment method."
           />
-          <ComingSoonBadge />
+          {checkoutDone && (
+            <span
+              className="
+                inline-flex items-center px-2 py-0.5 rounded-full
+                text-[11px] font-medium
+                bg-[rgba(34,197,94,0.12)] text-[var(--np-success)]
+                border border-[rgba(34,197,94,0.2)]
+              "
+            >
+              Subscribed
+            </span>
+          )}
         </div>
-        <p className="text-[var(--np-text-muted)] text-[13px]">
-          Upgrade plan coming soon — Stripe integration in progress.
-        </p>
+
+        <div className="flex items-center justify-between py-2">
+          {sub?.status === "active" ? (
+            <>
+              <div>
+                <p className="text-[var(--np-text-body)] text-[13px] font-medium">
+                  Pro plan · Active
+                </p>
+                {sub.currentPeriodEnd && (
+                  <p className="text-[var(--np-text-muted)] text-[12px] mt-0.5">
+                    Renews {formatPeriodEnd(sub.currentPeriodEnd)}
+                  </p>
+                )}
+              </div>
+              <form action={createPortalSession}>
+                <button
+                  type="submit"
+                  className="
+                    h-8 px-4 rounded-[var(--np-radius-md)]
+                    border border-[var(--np-border)]
+                    text-[var(--np-text-body)] text-[13px]
+                    hover:border-[var(--np-border-strong)] hover:text-[var(--np-text-strong)]
+                    transition-colors cursor-pointer
+                  "
+                >
+                  Manage billing
+                </button>
+              </form>
+            </>
+          ) : sub?.status === "past_due" ? (
+            <>
+              <div>
+                <p className="text-[var(--np-danger)] text-[13px] font-medium">
+                  Payment past due
+                </p>
+                <p className="text-[var(--np-text-muted)] text-[12px] mt-0.5">
+                  Please update your payment method to restore access.
+                </p>
+              </div>
+              <form action={createPortalSession}>
+                <button
+                  type="submit"
+                  className="
+                    h-8 px-4 rounded-[var(--np-radius-md)]
+                    border border-[rgba(239,68,68,0.4)]
+                    text-[var(--np-danger)] text-[13px]
+                    hover:border-[rgba(239,68,68,0.7)]
+                    transition-colors cursor-pointer
+                  "
+                >
+                  Update payment
+                </button>
+              </form>
+            </>
+          ) : sub?.status === "cancelled" ? (
+            <>
+              <div>
+                <p className="text-[var(--np-text-body)] text-[13px] font-medium">
+                  Subscription cancelled
+                </p>
+                {sub.currentPeriodEnd && (
+                  <p className="text-[var(--np-text-muted)] text-[12px] mt-0.5">
+                    Access until {formatPeriodEnd(sub.currentPeriodEnd)}
+                  </p>
+                )}
+              </div>
+              <form action={createCheckoutSession}>
+                <button
+                  type="submit"
+                  className="
+                    h-8 px-4 rounded-[var(--np-radius-md)]
+                    border border-[var(--np-accent)]
+                    text-[var(--np-accent-text)] text-[13px]
+                    hover:bg-[var(--np-accent)] hover:text-white
+                    transition-colors cursor-pointer
+                  "
+                >
+                  Resubscribe
+                </button>
+              </form>
+            </>
+          ) : (
+            <>
+              <div>
+                <p className="text-[var(--np-text-body)] text-[13px] font-medium">
+                  Free trial
+                </p>
+                <p className="text-[var(--np-text-muted)] text-[12px] mt-0.5">
+                  Subscribe to unlock full access.
+                </p>
+              </div>
+              <form action={createCheckoutSession}>
+                <button
+                  type="submit"
+                  className="
+                    h-8 px-4 rounded-[var(--np-radius-md)]
+                    border border-[var(--np-accent)]
+                    text-[var(--np-accent-text)] text-[13px]
+                    hover:bg-[var(--np-accent)] hover:text-white
+                    transition-colors cursor-pointer
+                  "
+                >
+                  Subscribe
+                </button>
+              </form>
+            </>
+          )}
+        </div>
       </SettingsCard>
 
       {/* Danger zone */}
