@@ -27,9 +27,8 @@ const googleProvider =
     : {}
 
 export const auth = betterAuth({
-  advanced: {
-    generateId: () => crypto.randomUUID(),
-  },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  advanced: { generateId: () => crypto.randomUUID() } as any,
   database: drizzleAdapter(db, {
     provider: "pg",
     schema: { user: users, session: sessions, verification: verifications, account: accounts },
