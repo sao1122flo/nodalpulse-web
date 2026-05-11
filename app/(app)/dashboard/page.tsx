@@ -6,6 +6,8 @@ import { auth } from "@/lib/auth"
 import { db } from "@/db/client"
 import { briefs } from "@/db/schema"
 import { eq, and, desc } from "drizzle-orm"
+import { getObject } from "@/lib/r2"
+import BriefFrame from "./BriefFrame"
 
 export const metadata: Metadata = { title: "Dashboard" }
 
@@ -41,6 +43,7 @@ export default async function DashboardPage() {
       date: briefs.date,
       model: briefs.model,
       promptVer: briefs.promptVer,
+      htmlR2Key: briefs.htmlR2Key,
       citationCount: briefs.citationCount,
       sendStatus: briefs.sendStatus,
       sentAt: briefs.sentAt,
@@ -54,6 +57,15 @@ export default async function DashboardPage() {
     )
     .orderBy(desc(briefs.date))
     .limit(1)
+
+  let briefHtml: string | null = null
+  if (brief?.htmlR2Key) {
+    try {
+      briefHtml = await getObject(brief.htmlR2Key)
+    } catch {
+      briefHtml = null
+    }
+  }
 
   return (
     <div className="px-8 py-8 max-w-3xl">
@@ -98,23 +110,26 @@ export default async function DashboardPage() {
 
           {/* Card body */}
           <div className="px-5 py-5">
-            <div
-              className="
-                rounded-[var(--np-radius-md)] border border-[var(--np-border)]
-                bg-[var(--np-surface-deep)] px-4 py-4
-              "
-            >
-              <p className="text-[var(--np-text-muted)] text-[13px] leading-relaxed">
-                Full brief content rendering coming soon — check your email for
-                today&apos;s brief.
-              </p>
-              {brief.model && (
-                <p className="text-[var(--np-text-muted)] text-[11px] mt-2 font-mono">
-                  model: {brief.model}
-                  {brief.promptVer ? ` · prompt: ${brief.promptVer}` : ""}
+            {briefHtml ? (
+              <BriefFrame html={briefHtml} />
+            ) : (
+              <div
+                className="
+                  rounded-[var(--np-radius-md)] border border-[var(--np-border)]
+                  bg-[var(--np-surface-deep)] px-4 py-4
+                "
+              >
+                <p className="text-[var(--np-text-muted)] text-[13px] leading-relaxed">
+                  Brief content unavailable — check your email for today&apos;s brief.
                 </p>
-              )}
-            </div>
+                {brief.model && (
+                  <p className="text-[var(--np-text-muted)] text-[11px] mt-2 font-mono">
+                    model: {brief.model}
+                    {brief.promptVer ? ` · prompt: ${brief.promptVer}` : ""}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         </div>
       ) : (
