@@ -39,7 +39,7 @@ export const auth = betterAuth({
     ...googleProvider,
   },
   account: {
-    accountLinking: { enabled: true },
+    accountLinking: { enabled: true, trustedProviders: ["google", "microsoft"] },
   },
   session: {
     expiresIn: 60 * 60 * 24 * 30,
