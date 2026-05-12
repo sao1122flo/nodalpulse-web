@@ -58,10 +58,10 @@ export const auth = betterAuth({
       },
     }),
   ],
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   databaseHooks: {
     user: {
       create: {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         before: async (user: any) => ({
           data: {
             ...user,
@@ -71,6 +71,7 @@ export const auth = betterAuth({
         }),
       },
     },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any,
 })
 

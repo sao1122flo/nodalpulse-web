@@ -1,0 +1,12 @@
+User-agent: *
+Disallow: /admin
+Disallow: /dashboard
+Disallow: /briefs
+Disallow: /dockets
+Disallow: /settings
+Disallow: /onboarding
+Disallow: /api/
+
+Allow: /
+Allow: /login
+Allow: /sitemap.xml

@@ -21,6 +21,10 @@ const envSchema = z.object({
   R2_SECRET_ACCESS_KEY: z.string().min(1),
   R2_ENDPOINT_URL: z.string().min(1),
   R2_BUCKET: z.string().default("nodalpulse-docs"),
+  ADMIN_EMAILS: z
+    .string()
+    .min(1)
+    .transform(s => s.split(",").map(e => e.trim().toLowerCase()).filter(Boolean)),
   SENTRY_DSN: z.string().optional(),
   NEXT_PUBLIC_APP_URL: z.string().min(1).default("http://localhost:3000"),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),

@@ -7,6 +7,7 @@ import {
   date,
   integer,
   json,
+  jsonb,
 } from "drizzle-orm/pg-core"
 
 // ---------------------------------------------------------------------------
@@ -132,6 +133,19 @@ export const accounts = pgTable("accounts", {
   password: text("password"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+})
+
+// ---------------------------------------------------------------------------
+// admin_actions (audit log for /__admin surface)
+// ---------------------------------------------------------------------------
+export const adminActions = pgTable("admin_actions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  actorEmailHash: text("actor_email_hash").notNull(),
+  action: text("action").notNull(),
+  targetType: text("target_type"),
+  targetId: text("target_id"),
+  metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 })
 
 // ---------------------------------------------------------------------------

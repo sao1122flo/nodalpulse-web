@@ -20,6 +20,7 @@ export default function LoginPage() {
     const params = new URLSearchParams(window.location.search)
     const error = params.get("error")
     if (error) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setOAuthError("Sign-in cancelled. Try again?")
       window.history.replaceState({}, "", window.location.pathname)
     }
