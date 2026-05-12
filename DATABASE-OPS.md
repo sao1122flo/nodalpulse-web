@@ -14,6 +14,16 @@ railway run psql $DATABASE_URL
 railway connect postgres
 ```
 
+> **Local note:** `railway run` injects the *private* `DATABASE_URL` (`postgres.railway.internal`)
+> which is only reachable from within Railway's network. For local scripts, use the public URL
+> from `.env.local` directly:
+>
+> ```bash
+> node --env-file=.env.local my-script.mjs
+> ```
+>
+> The `--env-file` flag is built into Node 20+. No dotenv dependency needed.
+
 ## Applying migrations
 
 Migration files live in `drizzle/`. Apply them with psql:
@@ -47,3 +57,32 @@ Tables in `db/schema/index.ts` fall into two ownership classes:
 
 The services-owned tables carry a `// READ-ONLY from nodalpulse-web.` comment block
 in the schema file as a reminder.
+
+---
+
+## Backlog
+
+### Services: instrument token usage on job_results.output
+
+Every LLM-touching job in `nodalpulse-services` (`extract`, `compose-brief`, and any
+future `llm.*` kind) must write the `usage` block below to `job_results.output`. This
+gates the cost dashboard at `/admin/cost` (currently showing a placeholder notice).
+
+```json
+{
+  "usage": {
+    "model": "string",
+    "input_tokens": "number",
+    "output_tokens": "number",
+    "cache_creation_input_tokens": "number",
+    "cache_read_input_tokens": "number",
+    "cost_usd": "number"
+  }
+}
+```
+
+`cost_usd` is computed services-side from the current Anthropic pricing table. The web
+app reads this field and never fetches pricing itself.
+
+Once any row has `output->'usage'->>'cost_usd'` populated, the cost tables on
+`/admin/cost` will populate automatically — no web-app deploy required.
