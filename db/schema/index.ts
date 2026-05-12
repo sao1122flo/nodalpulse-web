@@ -8,6 +8,7 @@ import {
   integer,
   json,
   jsonb,
+  numeric,
 } from "drizzle-orm/pg-core"
 
 // ---------------------------------------------------------------------------
@@ -154,4 +155,57 @@ export const adminActions = pgTable("admin_actions", {
 export const healthChecks = pgTable("health_checks", {
   id: uuid("id").defaultRandom().primaryKey(),
   checkedAt: timestamp("checked_at", { withTimezone: true }).defaultNow().notNull(),
+})
+
+// ---------------------------------------------------------------------------
+// READ-ONLY from nodalpulse-web.
+// Owner: nodalpulse-services. Do not write to this table from the web app.
+// If you need to mutate it, route the request through the services API.
+// ---------------------------------------------------------------------------
+export const jobs = pgTable("jobs", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  kind: text("kind").notNull(),
+  payload: jsonb("payload").$type<Record<string, unknown>>().notNull().default({}),
+  priority: integer("priority").notNull().default(0),
+  runAfter: timestamp("run_after", { withTimezone: true }).notNull(),
+  attempts: integer("attempts").notNull().default(0),
+  maxAttempts: integer("max_attempts").notNull().default(3),
+  lockedBy: text("locked_by"),
+  lockedUntil: timestamp("locked_until", { withTimezone: true }),
+  status: text("status").notNull().default("pending"),
+  error: text("error"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+})
+
+// READ-ONLY from nodalpulse-web.
+// Owner: nodalpulse-services. Do not write to this table from the web app.
+// If you need to mutate it, route the request through the services API.
+export const jobResults = pgTable("job_results", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  jobId: uuid("job_id")
+    .notNull()
+    .references(() => jobs.id, { onDelete: "cascade" }),
+  attempt: integer("attempt").notNull(),
+  success: boolean("success").notNull(),
+  output: jsonb("output").$type<Record<string, unknown>>().notNull().default({}),
+  durationMs: integer("duration_ms"),
+  finishedAt: timestamp("finished_at", { withTimezone: true }).defaultNow().notNull(),
+})
+
+// READ-ONLY from nodalpulse-web.
+// Owner: nodalpulse-services. Do not write to this table from the web app.
+// If you need to mutate it, route the request through the services API.
+export const evalRuns = pgTable("eval_runs", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  runAt: timestamp("run_at", { withTimezone: true }).defaultNow().notNull(),
+  model: text("model").notNull(),
+  promptVer: text("prompt_ver").notNull(),
+  taxonomyVer: text("taxonomy_ver").notNull(),
+  goldenSetSize: integer("golden_set_size").notNull(),
+  results: jsonb("results").$type<Record<string, unknown>>().notNull(),
+  overallAccuracy: numeric("overall_accuracy"),
+  passed: boolean("passed").notNull(),
+  failedTags: text("failed_tags").array().notNull().default([]),
+  triggeredAlert: boolean("triggered_alert").notNull().default(false),
 })
