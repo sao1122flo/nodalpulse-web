@@ -52,8 +52,14 @@ export async function POST(req: NextRequest) {
 
       if (!userId || !stripeCustomerId || !stripeSubscriptionId) break
 
-      const stripeSub = await stripe.subscriptions.retrieve(stripeSubscriptionId)
-      const currentPeriodEnd = new Date(stripeSub.items.data[0].current_period_end * 1000)
+      const stripeSub = await stripe.subscriptions.retrieve(stripeSubscriptionId, {
+        expand: ["latest_invoice"],
+      })
+      const inv = stripeSub.latest_invoice
+      const currentPeriodEnd =
+        typeof inv === "object" && inv !== null && "period_end" in inv
+          ? new Date((inv as { period_end: number }).period_end * 1000)
+          : null
 
       await db
         .insert(subscriptions)
@@ -86,7 +92,9 @@ export async function POST(req: NextRequest) {
       const stripeSub = event.data.object
       const stripeSubscriptionId = stripeSub.id
       const status = stripeSub.status
-      const currentPeriodEnd = new Date(stripeSub.items.data[0].current_period_end * 1000)
+      // current_period_end removed from SDK v22 types; still present in event payload
+      const rawEnd = (stripeSub as unknown as { current_period_end?: number }).current_period_end
+      const currentPeriodEnd = rawEnd ? new Date(rawEnd * 1000) : null
 
       const [row] = await db
         .select({ userId: subscriptions.userId })
