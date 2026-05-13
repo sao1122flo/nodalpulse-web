@@ -75,7 +75,7 @@ export const entitlements = pgTable("entitlements", {
     .references(() => users.id),
   feature: text("feature").notNull(),
   expiresAt: timestamp("expires_at", { withTimezone: true }),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  grantedAt: timestamp("granted_at", { withTimezone: true }).defaultNow(),
 })
 
 // ---------------------------------------------------------------------------
