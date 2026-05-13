@@ -72,10 +72,10 @@ export async function POST(req: NextRequest) {
       // Replace any existing pro entitlement for this user
       await db
         .delete(entitlements)
-        .where(and(eq(entitlements.userId, userId), eq(entitlements.feature, "pro")))
+        .where(and(eq(entitlements.userId, userId), eq(entitlements.feature, "daily-brief")))
       await db.insert(entitlements).values({
         userId,
-        feature: "pro",
+        feature: "daily-brief",
         expiresAt: currentPeriodEnd,
       })
 
@@ -103,7 +103,7 @@ export async function POST(req: NextRequest) {
       await db
         .update(entitlements)
         .set({ expiresAt: currentPeriodEnd })
-        .where(and(eq(entitlements.userId, row.userId), eq(entitlements.feature, "pro")))
+        .where(and(eq(entitlements.userId, row.userId), eq(entitlements.feature, "daily-brief")))
 
       break
     }
@@ -128,7 +128,7 @@ export async function POST(req: NextRequest) {
       await db
         .update(entitlements)
         .set({ expiresAt: new Date() })
-        .where(and(eq(entitlements.userId, row.userId), eq(entitlements.feature, "pro")))
+        .where(and(eq(entitlements.userId, row.userId), eq(entitlements.feature, "daily-brief")))
 
       break
     }
