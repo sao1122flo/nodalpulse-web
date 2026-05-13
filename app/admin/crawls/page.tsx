@@ -1,4 +1,4 @@
-import { forbidden } from "next/navigation"
+﻿import { forbidden } from "next/navigation"
 import { desc, inArray, like } from "drizzle-orm"
 import type { Metadata } from "next"
 import { db } from "@/db/client"
@@ -8,7 +8,7 @@ import { logAdminAction } from "@/lib/auth/log-admin-action"
 import { DenseTable } from "@/components/dense-table"
 import type { DenseColumn } from "@/components/dense-table"
 
-export const metadata: Metadata = { title: "Crawls — Admin — NodalPulse" }
+export const metadata: Metadata = { title: "Crawls â€” Admin â€” NodalPulse" }
 
 type CrawlRow = {
   kind: string
@@ -29,7 +29,7 @@ export default async function AdminCrawlsPage() {
   const recentJobs = await db
     .select()
     .from(jobs)
-    .where(like(jobs.kind, "crawl.%"))
+    .where(like(jobs.kind, "crawl-%"))
     .orderBy(desc(jobs.createdAt))
     .limit(50)
 
@@ -55,9 +55,9 @@ export default async function AdminCrawlsPage() {
       kind: job.kind,
       status: job.status,
       attempts: String(job.attempts),
-      duration_ms: latest?.durationMs != null ? `${latest.durationMs}ms` : "—",
-      success: latest ? (latest.success ? "pass" : "fail") : "—",
-      error: job.error ?? "—",
+      duration_ms: latest?.durationMs != null ? `${latest.durationMs}ms` : "â€”",
+      success: latest ? (latest.success ? "pass" : "fail") : "â€”",
+      error: job.error ?? "â€”",
       created_at: job.createdAt.toISOString().replace("T", " ").slice(0, 19) + " UTC",
     }
   })
