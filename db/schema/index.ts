@@ -174,6 +174,7 @@ export const jobs = pgTable("jobs", {
   lockedUntil: timestamp("locked_until", { withTimezone: true }),
   status: text("status").notNull().default("pending"),
   error: text("error"),
+  idempotencyKey: text("idempotency_key"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 })

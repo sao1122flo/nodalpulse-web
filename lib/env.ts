@@ -25,6 +25,8 @@ const envSchema = z.object({
     .string()
     .min(1)
     .transform(s => s.split(",").map(e => e.trim().toLowerCase()).filter(Boolean)),
+  SERVICES_API_URL: z.string().min(1),
+  SERVICES_API_KEY: z.string().min(1),
   SENTRY_DSN: z.string().optional(),
   NEXT_PUBLIC_APP_URL: z.string().min(1).default("http://localhost:3000"),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
