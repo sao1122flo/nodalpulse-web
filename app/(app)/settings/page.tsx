@@ -181,7 +181,7 @@ export default async function SettingsPage({
                 <button
                   type="submit"
                   className="
-                    h-8 px-4 rounded-[var(--np-radius-md)]
+                    min-h-11 px-4 rounded-[var(--np-radius-md)]
                     border border-[var(--np-border)]
                     text-[var(--np-text-body)] text-[13px]
                     hover:border-[var(--np-border-strong)] hover:text-[var(--np-text-strong)]
@@ -206,7 +206,7 @@ export default async function SettingsPage({
                 <button
                   type="submit"
                   className="
-                    h-8 px-4 rounded-[var(--np-radius-md)]
+                    min-h-11 px-4 rounded-[var(--np-radius-md)]
                     border border-[rgba(239,68,68,0.4)]
                     text-[var(--np-danger)] text-[13px]
                     hover:border-[rgba(239,68,68,0.7)]
@@ -233,7 +233,7 @@ export default async function SettingsPage({
                 <button
                   type="submit"
                   className="
-                    h-8 px-4 rounded-[var(--np-radius-md)]
+                    min-h-11 px-4 rounded-[var(--np-radius-md)]
                     border border-[var(--np-accent)]
                     text-[var(--np-accent-text)] text-[13px]
                     hover:bg-[var(--np-accent)] hover:text-white
@@ -258,7 +258,7 @@ export default async function SettingsPage({
                 <button
                   type="submit"
                   className="
-                    h-8 px-4 rounded-[var(--np-radius-md)]
+                    min-h-11 px-4 rounded-[var(--np-radius-md)]
                     border border-[var(--np-accent)]
                     text-[var(--np-accent-text)] text-[13px]
                     hover:bg-[var(--np-accent)] hover:text-white

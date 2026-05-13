@@ -83,51 +83,76 @@ export default async function BriefsPage() {
           </p>
         </div>
       ) : (
-        <div className="rounded-[var(--np-radius-lg)] border border-[var(--np-border)] bg-[var(--np-surface-elevated)] overflow-hidden">
-          <table className="w-full text-[13px]">
-            <thead>
-              <tr className="border-b border-[var(--np-border)]">
-                {["Date", "Items", "Status", "Sent At"].map(col => (
-                  <th
-                    key={col}
-                    className="
-                      px-4 py-2.5 text-left
-                      text-[var(--np-text-muted)] text-[11px] font-medium uppercase tracking-wide
-                    "
-                  >
-                    {col}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {allBriefs.map((brief, idx) => (
-                <tr
-                  key={brief.id}
-                  className={`
-                    border-b border-[var(--np-border)] last:border-0
-                    hover:bg-[var(--np-surface-deep)] transition-colors
-                    ${idx % 2 === 0 ? "" : ""}
-                  `}
-                  style={{ height: "40px" }}
-                >
-                  <td className="px-4 py-0 text-[var(--np-text-strong)] font-medium">
-                    {formatDate(brief.date)}
-                  </td>
-                  <td className="px-4 py-0 text-[var(--np-text-body)]">
-                    {brief.citationCount}
-                  </td>
-                  <td className="px-4 py-0">
-                    <StatusBadge status={brief.sendStatus} />
-                  </td>
-                  <td className="px-4 py-0 text-[var(--np-text-body)]">
-                    {formatSentAt(brief.sentAt)}
-                  </td>
+        <>
+          {/* Desktop table */}
+          <div className="hidden md:block rounded-[var(--np-radius-lg)] border border-[var(--np-border)] bg-[var(--np-surface-elevated)] overflow-hidden">
+            <table className="w-full text-[13px]">
+              <thead>
+                <tr className="border-b border-[var(--np-border)]">
+                  {["Date", "Items", "Status", "Sent At"].map(col => (
+                    <th
+                      key={col}
+                      className="
+                        px-4 py-2.5 text-left
+                        text-[var(--np-text-muted)] text-[11px] font-medium uppercase tracking-wide
+                      "
+                    >
+                      {col}
+                    </th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {allBriefs.map((brief, idx) => (
+                  <tr
+                    key={brief.id}
+                    className={`
+                      border-b border-[var(--np-border)] last:border-0
+                      hover:bg-[var(--np-surface-deep)] transition-colors
+                      ${idx % 2 === 0 ? "" : ""}
+                    `}
+                    style={{ height: "40px" }}
+                  >
+                    <td className="px-4 py-0 text-[var(--np-text-strong)] font-medium">
+                      {formatDate(brief.date)}
+                    </td>
+                    <td className="px-4 py-0 text-[var(--np-text-body)]">
+                      {brief.citationCount}
+                    </td>
+                    <td className="px-4 py-0">
+                      <StatusBadge status={brief.sendStatus} />
+                    </td>
+                    <td className="px-4 py-0 text-[var(--np-text-body)]">
+                      {formatSentAt(brief.sentAt)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile card list */}
+          <div className="md:hidden flex flex-col gap-2">
+            {allBriefs.map((brief) => (
+              <div
+                key={brief.id}
+                className="rounded-[var(--np-radius-lg)] border border-[var(--np-border)] bg-[var(--np-surface-elevated)] px-4 py-3"
+              >
+                <div className="flex items-center justify-between gap-3 mb-1">
+                  <p className="text-[var(--np-text-strong)] font-medium text-[14px]">
+                    {formatDate(brief.date)}
+                  </p>
+                  <StatusBadge status={brief.sendStatus} />
+                </div>
+                <p className="text-[var(--np-text-muted)] text-[12px]">
+                  {brief.citationCount} item{brief.citationCount !== 1 ? "s" : ""}
+                  {" · "}
+                  {formatSentAt(brief.sentAt)}
+                </p>
+              </div>
+            ))}
+          </div>
+        </>
       )}
     </div>
   )
