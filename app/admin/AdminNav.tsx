@@ -7,6 +7,7 @@ const LINKS = [
   { href: "/admin/crawls", label: "Crawls" },
   { href: "/admin/evals", label: "Evals" },
   { href: "/admin/users", label: "Users" },
+  { href: "/admin/extractions", label: "Extractions" },
   { href: "/admin/cost", label: "Cost" },
 ]
 
