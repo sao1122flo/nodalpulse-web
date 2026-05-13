@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 
-const PUBLIC = ["/login", "/api/auth", "/_next", "/favicon.ico"]
+const PUBLIC = ["/login", "/api/auth", "/api/stripe-webhook", "/_next", "/favicon.ico"]
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
