@@ -11,6 +11,18 @@ import {
   numeric,
 } from "drizzle-orm/pg-core"
 
+// Matches the JSONB payload written by services' extraction worker (schema_ver "1.0").
+export interface ExtractionPayload {
+  docket_number?:  string | null
+  summary?:        string | null
+  parties?:        string[]
+  deadlines?:      { description: string; date: string | null }[]
+  effective_date?: string | null
+  key_points?:     string[]
+  relief_requested?: string | null
+  outcome?:        string | null
+}
+
 // ---------------------------------------------------------------------------
 // users
 // ---------------------------------------------------------------------------
@@ -155,6 +167,63 @@ export const adminActions = pgTable("admin_actions", {
 export const healthChecks = pgTable("health_checks", {
   id: uuid("id").defaultRandom().primaryKey(),
   checkedAt: timestamp("checked_at", { withTimezone: true }).defaultNow().notNull(),
+})
+
+// ---------------------------------------------------------------------------
+// dockets
+// Shared: web creates user-tracked entries; services will link filings via
+// filings.docket_id as the pipeline matures. source_id encodes jurisdiction
+// (puct / ercot-nprr / ercot-mn). Phase 12a: web only writes PUCT rows.
+// ---------------------------------------------------------------------------
+export const dockets = pgTable("dockets", {
+  id:         uuid("id").defaultRandom().primaryKey(),
+  sourceId:   uuid("source_id").notNull(),
+  externalId: text("external_id").notNull(),
+  title:      text("title"),
+  status:     text("status").notNull().default("open"),
+  openedAt:   date("opened_at"),
+  closedAt:   date("closed_at"),
+  metadata:   jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+  createdAt:  timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt:  timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+})
+
+// ---------------------------------------------------------------------------
+// user_dockets
+// ---------------------------------------------------------------------------
+export const userDockets = pgTable("user_dockets", {
+  id:        uuid("id").defaultRandom().primaryKey(),
+  userId:    uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  docketId:  uuid("docket_id").notNull().references(() => dockets.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+})
+
+// ---------------------------------------------------------------------------
+// READ-ONLY from nodalpulse-web.
+// Owner: nodalpulse-services. Do not write to these tables from the web app
+// except where explicitly noted (dockets above is a shared-write exception).
+// ---------------------------------------------------------------------------
+
+// filings — subset of columns used by docket detail queries.
+export const filings = pgTable("filings", {
+  id:        uuid("id").defaultRandom().primaryKey(),
+  sourceId:  uuid("source_id").notNull(),
+  docketId:  uuid("docket_id"),
+  docType:   text("doc_type").notNull(),
+  title:     text("title").notNull(),
+  filer:     text("filer"),
+  filedAt:   timestamp("filed_at", { withTimezone: true }).notNull(),
+  sourceUrl: text("source_url"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+})
+
+// extractions — subset of columns; payload typed against ExtractionPayload.
+export const extractions = pgTable("extractions", {
+  id:          uuid("id").defaultRandom().primaryKey(),
+  filingId:    uuid("filing_id").notNull(),
+  schemaVer:   text("schema_ver").notNull(),
+  payload:     jsonb("payload").$type<ExtractionPayload>().notNull().default({}),
+  extractedAt: timestamp("extracted_at", { withTimezone: true }).notNull(),
 })
 
 // ---------------------------------------------------------------------------
