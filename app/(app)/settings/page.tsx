@@ -127,6 +127,15 @@ export default async function SettingsPage({
           label="Name"
           value={session.user.name ?? "—"}
         />
+        <div className="flex items-center justify-between py-2.5">
+          <span className="text-[var(--np-text-body)] text-[13px]">Tracked dockets</span>
+          <a
+            href="/dockets"
+            className="text-[var(--np-accent-text)] text-[13px] hover:text-[var(--np-accent-hover)] transition-colors"
+          >
+            Manage &rarr;
+          </a>
+        </div>
       </SettingsCard>
 
       {/* Notifications */}
