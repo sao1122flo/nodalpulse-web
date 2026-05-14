@@ -7,7 +7,9 @@ import { db } from "@/db/client"
 import { briefs } from "@/db/schema"
 import { eq, and, desc } from "drizzle-orm"
 import { getObject } from "@/lib/r2"
+import { BRIEF_DELIVERY_COPY } from "@/lib/copy"
 import BriefFrame from "./BriefFrame"
+import { ReloadButton } from "./ReloadButton"
 
 export const metadata: Metadata = { title: "Dashboard" }
 
@@ -128,6 +130,7 @@ export default async function DashboardPage() {
                     {brief.promptVer ? ` · prompt: ${brief.promptVer}` : ""}
                   </p>
                 )}
+                <ReloadButton />
               </div>
             )}
           </div>
@@ -154,9 +157,7 @@ export default async function DashboardPage() {
             No brief yet
           </h2>
           <p className="text-[var(--np-text-muted)] text-[13px] max-w-sm mx-auto leading-relaxed">
-            Your first brief is being generated. It will appear here and land in
-            your inbox once ready — typically within a few minutes of account
-            setup.
+            {BRIEF_DELIVERY_COPY}
           </p>
         </div>
       )}

@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { saveProfile } from "./actions"
+import { BRIEF_DELIVERY_COPY } from "@/lib/copy"
 
 const MARKET_ROLES = [
   "Regulatory Analyst",
@@ -24,14 +25,13 @@ const ERCOT_ZONES = [
   { value: "south", label: "South" },
 ]
 
-const TOTAL_STEPS = 4
+const TOTAL_STEPS = 3
 
 export default function OnboardingPage() {
   const router = useRouter()
   const [step, setStep] = useState(1)
   const [role, setRole] = useState("")
   const [markets, setMarkets] = useState<string[]>(["all"])
-  const [docketInput, setDocketInput] = useState("")
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState("")
 
@@ -47,26 +47,14 @@ export default function OnboardingPage() {
     })
   }
 
-  function parseDockets(raw: string): string[] {
-    return raw
-      .split(/[\n,]+/)
-      .map(s => s.trim())
-      .filter(Boolean)
-      .slice(0, 10)
-  }
-
   async function handleFinish() {
     setSaving(true)
     setError("")
     try {
-      await saveProfile({
-        role,
-        markets,
-        docketIds: parseDockets(docketInput),
-      })
-      setStep(4)
+      await saveProfile({ role, markets, docketIds: [] })
+      setStep(3)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.")
+      setError(err instanceof Error ? err.message : "Something went wrong. Please try again.")
     } finally {
       setSaving(false)
     }
@@ -86,7 +74,7 @@ export default function OnboardingPage() {
             </span>
           </div>
 
-          {step < 4 && (
+          {step < TOTAL_STEPS && (
             <>
               <h1 className="text-[var(--np-text-primary)] text-xl font-semibold mb-1">
                 Set up your account
@@ -225,57 +213,15 @@ export default function OnboardingPage() {
                   )
                 })}
               </div>
-            </div>
-          )}
-
-          {/* ── Step 3: Dockets ── */}
-          {step === 3 && (
-            <div>
-              <h2 className="text-[var(--np-text-primary)] font-semibold text-[15px] mb-1">
-                Dockets to track{" "}
-                <span className="text-[var(--np-text-muted)] font-normal text-[13px]">
-                  (optional)
-                </span>
-              </h2>
-              <p className="text-[var(--np-text-muted)] text-[13px] mb-4">
-                Paste PUCT docket numbers separated by commas or newlines. Free tier
-                supports up to 10 dockets.
-              </p>
-              <textarea
-                value={docketInput}
-                onChange={e => setDocketInput(e.target.value)}
-                rows={5}
-                placeholder="56789, 57001, 57234"
-                className="
-                  w-full px-3 py-2.5
-                  rounded-[var(--np-radius-md)]
-                  border border-[var(--np-border)]
-                  bg-[var(--np-surface-deep)]
-                  text-[var(--np-text-primary)] text-[13px]
-                  placeholder:text-[var(--np-text-muted)]
-                  font-mono
-                  resize-none
-                  outline-none
-                  focus:border-[var(--np-accent)]
-                  transition-colors
-                "
-              />
-              {docketInput.trim() && (
-                <p className="mt-1.5 text-[var(--np-text-muted)] text-[11px]">
-                  {Math.min(parseDockets(docketInput).length, 10)} docket
-                  {parseDockets(docketInput).length !== 1 ? "s" : ""} detected
-                  {parseDockets(docketInput).length > 10 && " (max 10 for free tier)"}
-                </p>
-              )}
 
               {error && (
-                <p className="mt-2 text-[var(--np-danger)] text-[12px]">{error}</p>
+                <p className="mt-3 text-[var(--np-danger)] text-[12px]">{error}</p>
               )}
             </div>
           )}
 
-          {/* ── Step 4: Done ── */}
-          {step === 4 && (
+          {/* ── Step 3: Done ── */}
+          {step === 3 && (
             <div className="text-center py-4">
               <div
                 className="w-10 h-10 rounded-full bg-[var(--np-accent-fill)] border border-[var(--np-accent)] flex items-center justify-center mx-auto mb-4"
@@ -294,8 +240,7 @@ export default function OnboardingPage() {
                 You&apos;re all set
               </h2>
               <p className="text-[var(--np-text-body)] text-[13px] leading-relaxed mb-6">
-                Your first brief is generating. You&apos;ll receive it by email shortly.
-                We&apos;ll also show it here once ready.
+                {BRIEF_DELIVERY_COPY}
               </p>
               <button
                 onClick={() => router.push("/dashboard")}
@@ -317,7 +262,7 @@ export default function OnboardingPage() {
         </div>
 
         {/* Navigation */}
-        {step < 4 && (
+        {step < TOTAL_STEPS && (
           <div className="flex items-center justify-between mt-4">
             <button
               onClick={() => setStep(s => Math.max(1, s - 1))}
@@ -335,10 +280,10 @@ export default function OnboardingPage() {
               Back
             </button>
 
-            {step < 3 ? (
+            {step < 2 ? (
               <button
                 onClick={() => setStep(s => s + 1)}
-                disabled={step === 1 && !role}
+                disabled={!role}
                 className="
                   h-9 px-5
                   rounded-[var(--np-radius-md)]
