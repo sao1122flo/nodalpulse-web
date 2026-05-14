@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { headers } from "next/headers"
+import Link from "next/link"
 import { auth } from "@/lib/auth"
 import { db } from "@/db/client"
 import { briefs } from "@/db/schema"
@@ -11,6 +12,7 @@ export const metadata: Metadata = { title: "Brief History" }
 function formatDate(dateStr: string): string {
   const d = new Date(dateStr + "T12:00:00Z")
   return d.toLocaleDateString("en-US", {
+    weekday: "short",
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -103,18 +105,19 @@ export default async function BriefsPage() {
                 </tr>
               </thead>
               <tbody>
-                {allBriefs.map((brief, idx) => (
+                {allBriefs.map(brief => (
                   <tr
                     key={brief.id}
-                    className={`
-                      border-b border-[var(--np-border)] last:border-0
-                      hover:bg-[var(--np-surface-deep)] transition-colors
-                      ${idx % 2 === 0 ? "" : ""}
-                    `}
+                    className="border-b border-[var(--np-border)] last:border-0"
                     style={{ height: "40px" }}
                   >
                     <td className="px-4 py-0 text-[var(--np-text-strong)] font-medium">
-                      {formatDate(brief.date)}
+                      <Link
+                        href={`/briefs/${brief.id}`}
+                        className="hover:text-[var(--np-accent-text)] transition-colors"
+                      >
+                        {formatDate(brief.date)}
+                      </Link>
                     </td>
                     <td className="px-4 py-0 text-[var(--np-text-body)]">
                       {brief.citationCount}
@@ -133,10 +136,11 @@ export default async function BriefsPage() {
 
           {/* Mobile card list */}
           <div className="md:hidden flex flex-col gap-2">
-            {allBriefs.map((brief) => (
-              <div
+            {allBriefs.map(brief => (
+              <Link
                 key={brief.id}
-                className="rounded-[var(--np-radius-lg)] border border-[var(--np-border)] bg-[var(--np-surface-elevated)] px-4 py-3"
+                href={`/briefs/${brief.id}`}
+                className="rounded-[var(--np-radius-lg)] border border-[var(--np-border)] bg-[var(--np-surface-elevated)] px-4 py-3 block hover:border-[var(--np-border-strong)] transition-colors"
               >
                 <div className="flex items-center justify-between gap-3 mb-1">
                   <p className="text-[var(--np-text-strong)] font-medium text-[14px]">
@@ -149,7 +153,7 @@ export default async function BriefsPage() {
                   {" · "}
                   {formatSentAt(brief.sentAt)}
                 </p>
-              </div>
+              </Link>
             ))}
           </div>
         </>

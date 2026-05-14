@@ -10,6 +10,7 @@ import { getObject } from "@/lib/r2"
 import { BRIEF_DELIVERY_COPY } from "@/lib/copy"
 import BriefFrame from "./BriefFrame"
 import { ReloadButton } from "./ReloadButton"
+import { RequestBriefButton } from "./RequestBriefButton"
 
 export const metadata: Metadata = { title: "Dashboard" }
 
@@ -38,6 +39,8 @@ function formatSentAt(ts: Date | null): string {
 export default async function DashboardPage() {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session) redirect("/login")
+
+  const todayIso = new Date().toISOString().slice(0, 10)
 
   const [brief] = await db
     .select({
@@ -159,6 +162,7 @@ export default async function DashboardPage() {
           <p className="text-[var(--np-text-muted)] text-[13px] max-w-sm mx-auto leading-relaxed">
             {BRIEF_DELIVERY_COPY}
           </p>
+          <RequestBriefButton date={todayIso} />
         </div>
       )}
 
