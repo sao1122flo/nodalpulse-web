@@ -1,9 +1,11 @@
 import { forbidden } from "next/navigation"
 import { sql } from "drizzle-orm"
 import type { Metadata } from "next"
+import Link from "next/link"
 import { db } from "@/db/client"
 import { requireAdmin } from "@/lib/auth/require-admin"
 import { logAdminAction } from "@/lib/auth/log-admin-action"
+import { getLlmCosts } from "@/lib/services-client"
 import { DenseTable } from "@/components/dense-table"
 import type { DenseColumn } from "@/components/dense-table"
 
@@ -29,14 +31,39 @@ type DailyRow = {
   successes: string
 }
 
-export default async function AdminCostPage() {
+type LlmCostRow = {
+  day: string
+  stage: string
+  model: string
+  calls: string
+  cost_usd: string
+}
+
+const VALID_DAYS = [1, 7, 30, 90] as const
+
+export default async function AdminCostPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ days?: string }>
+}) {
   const admin = await requireAdmin()
   if (!admin.ok) return forbidden()
 
   await logAdminAction({ action: "admin.viewed_cost" })
 
-  // Consecutive failures: for each kind, count how many of the most recent results
-  // (newest first) are failures before the first success. 0 = healthy.
+  const sp = await searchParams
+  const days = VALID_DAYS.includes(Number(sp.days) as (typeof VALID_DAYS)[number])
+    ? Number(sp.days)
+    : 7
+
+  // Fetch LLM costs from services (cached 60s)
+  let llmCosts: Awaited<ReturnType<typeof getLlmCosts>> | null = null
+  try {
+    llmCosts = await getLlmCosts(days)
+  } catch {
+    llmCosts = null
+  }
+
   const throughputRaw = await db.execute(sql`
     WITH ranked AS (
       SELECT
@@ -114,6 +141,17 @@ export default async function AdminCostPage() {
     successes: String(row.successes),
   }))
 
+  const llmCostRows: LlmCostRow[] =
+    llmCosts?.ok
+      ? llmCosts.value.by_day.map(row => ({
+          day: row.day,
+          stage: row.stage,
+          model: row.model,
+          calls: String(row.calls),
+          cost_usd: `$${row.cost_usd.toFixed(4)}`,
+        }))
+      : []
+
   const throughputColumns: DenseColumn<ThroughputRow>[] = [
     { key: "kind", header: "Kind" },
     { key: "total", header: "Total" },
@@ -145,6 +183,21 @@ export default async function AdminCostPage() {
     { key: "successes", header: "Successes" },
   ]
 
+  const llmCostColumns: DenseColumn<LlmCostRow>[] = [
+    { key: "day", header: "Day" },
+    { key: "stage", header: "Stage" },
+    { key: "model", header: "Model" },
+    { key: "calls", header: "Calls" },
+    { key: "cost_usd", header: "Cost" },
+  ]
+
+  const dayPickerClass = (n: number) =>
+    `text-[12px] px-2 py-0.5 rounded border transition-colors ${
+      n === days
+        ? "border-[var(--np-border-strong)] text-[var(--np-text-strong)] bg-[var(--np-surface-deep)]"
+        : "border-[var(--np-border)] text-[var(--np-text-muted)] hover:text-[var(--np-text-body)] hover:border-[var(--np-border-strong)]"
+    }`
+
   return (
     <div>
       <div className="mb-6">
@@ -152,30 +205,52 @@ export default async function AdminCostPage() {
           Cost
         </h1>
         <p className="text-[var(--np-text-muted)] text-[12px] mt-0.5">
-          Pipeline health. LLM cost section pending services instrumentation.
+          Pipeline health and LLM spend.
         </p>
       </div>
 
-      <div className="mb-8 rounded-[var(--np-radius-md)] border border-[var(--np-border)] bg-[var(--np-surface-elevated)] p-4">
-        <p className="text-[var(--np-text-body)] text-[12px] mb-2">
-          LLM cost tracking is not yet instrumented. When{" "}
-          <code className="font-mono">nodalpulse-services</code> writes the{" "}
-          <code className="font-mono">usage</code> block below to{" "}
-          <code className="font-mono">job_results.output</code> for every LLM-touching
-          job, cost tables will populate automatically:
-        </p>
-        <pre className="text-[var(--np-text-body)] text-[12px] bg-[var(--np-surface-deep)] rounded p-3 overflow-x-auto leading-relaxed">
-{`{
-  usage: {
-    model: string,
-    input_tokens: number,
-    output_tokens: number,
-    cache_creation_input_tokens: number,
-    cache_read_input_tokens: number,
-    cost_usd: number   // computed services-side from the current pricing table
-  }
-}`}
-        </pre>
+      {/* LLM Costs */}
+      <div className="mb-8">
+        <div className="flex items-center gap-3 mb-3">
+          <h2 className="text-[var(--np-text-primary)] text-base font-semibold tracking-tight">
+            LLM Costs
+          </h2>
+          <div className="flex items-center gap-1">
+            {VALID_DAYS.map(n => (
+              <Link key={n} href={`?days=${n}`} className={dayPickerClass(n)}>
+                {n}d
+              </Link>
+            ))}
+          </div>
+        </div>
+
+        {llmCosts === null ? (
+          <p className="text-[var(--np-danger)] text-[12px]">
+            LLM cost data unavailable — services error.
+          </p>
+        ) : llmCosts.ok ? (
+          <>
+            <p className="text-[var(--np-text-muted)] text-[12px] mb-3">
+              <span className="text-[var(--np-text-strong)] font-medium">
+                ${llmCosts.value.totals.cost_usd.toFixed(4)}
+              </span>
+              {" "}total &middot;{" "}
+              <span className="text-[var(--np-text-strong)] font-medium">
+                {llmCosts.value.totals.calls}
+              </span>
+              {" "}calls &middot; {llmCosts.value.range.from} to {llmCosts.value.range.to}
+            </p>
+            <DenseTable<LlmCostRow>
+              columns={llmCostColumns}
+              rows={llmCostRows}
+              emptyMessage="No LLM calls in this window."
+            />
+          </>
+        ) : (
+          <p className="text-[var(--np-danger)] text-[12px]">
+            LLM cost data unavailable — services error.
+          </p>
+        )}
       </div>
 
       <div className="mb-8">

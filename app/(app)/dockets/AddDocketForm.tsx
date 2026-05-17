@@ -17,7 +17,11 @@ export function AddDocketForm() {
       const result = await trackDocket({ docketNumber: val })
       if (result.ok) {
         if (inputRef.current) inputRef.current.value = ""
-        setMessage("Docket added.")
+        setMessage(
+          result.value.warming
+            ? "Tracking saved — your filings are warming up, refresh in a minute."
+            : "Docket added."
+        )
       } else {
         setMessage(result.error)
       }

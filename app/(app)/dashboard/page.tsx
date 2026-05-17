@@ -8,6 +8,7 @@ import { briefs } from "@/db/schema"
 import { eq, and, desc } from "drizzle-orm"
 import { getObject } from "@/lib/r2"
 import { BRIEF_DELIVERY_COPY } from "@/lib/copy"
+import { SAMPLE_BRIEF_HTML } from "@/lib/sample-brief"
 import BriefFrame from "./BriefFrame"
 import { ReloadButton } from "./ReloadButton"
 import { RequestBriefButton } from "./RequestBriefButton"
@@ -139,29 +140,38 @@ export default async function DashboardPage() {
           </div>
         </div>
       ) : (
-        /* Empty state */
-        <div
-          className="
-            rounded-[var(--np-radius-lg)] border border-[var(--np-border)]
-            bg-[var(--np-surface-elevated)]
-            px-8 py-12 text-center
-          "
-        >
-          <div
-            className="
-              w-10 h-10 rounded-full border border-[var(--np-border-strong)]
-              bg-[var(--np-surface-deep)]
-              flex items-center justify-center mx-auto mb-4
-            "
-          >
-            <span className="text-[var(--np-text-muted)] text-base">&#9632;</span>
+        /* Empty state — show sample brief so new users see something compelling */
+        <div>
+          <div className="rounded-[var(--np-radius-lg)] border border-[var(--np-border)] bg-[var(--np-surface-elevated)] overflow-hidden">
+            {/* Card header */}
+            <div className="px-5 py-4 border-b border-[var(--np-border)] flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[var(--np-text-primary)] font-medium text-[14px]">
+                  Example brief
+                </p>
+                <p className="text-[var(--np-text-muted)] text-[12px] mt-0.5">
+                  {BRIEF_DELIVERY_COPY}
+                </p>
+              </div>
+              <span
+                className="
+                  inline-flex items-center px-2 py-0.5 rounded-full
+                  text-[11px] font-medium
+                  bg-[rgba(245,158,11,0.12)] text-[#92400E]
+                  border border-[rgba(245,158,11,0.3)]
+                  flex-shrink-0
+                "
+              >
+                Sample
+              </span>
+            </div>
+
+            {/* Card body */}
+            <div className="px-5 py-5">
+              <BriefFrame html={SAMPLE_BRIEF_HTML} />
+            </div>
           </div>
-          <h2 className="text-[var(--np-text-strong)] font-medium text-[14px] mb-1">
-            No brief yet
-          </h2>
-          <p className="text-[var(--np-text-muted)] text-[13px] max-w-sm mx-auto leading-relaxed">
-            {BRIEF_DELIVERY_COPY}
-          </p>
+
           <RequestBriefButton date={todayIso} />
         </div>
       )}

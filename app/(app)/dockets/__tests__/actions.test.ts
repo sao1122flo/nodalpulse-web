@@ -1,11 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 
-const { mockGetSession, mockSelect, mockInsert, mockDelete, mockRevalidatePath } = vi.hoisted(() => ({
+const { mockGetSession, mockSelect, mockInsert, mockDelete, mockRevalidatePath, mockRefreshDocket } = vi.hoisted(() => ({
   mockGetSession:     vi.fn(),
   mockSelect:         vi.fn(),
   mockInsert:         vi.fn(),
   mockDelete:         vi.fn(),
   mockRevalidatePath: vi.fn(),
+  mockRefreshDocket:  vi.fn().mockResolvedValue({ ok: true, value: { docket_number: "59475", queued: 0, already_extracted: 0 } }),
 }))
 
 vi.mock("@/lib/auth", () => ({
@@ -33,6 +34,10 @@ vi.mock("@/db/schema", () => ({
   dockets:     { id: "id", sourceId: "source_id", externalId: "external_id", title: "title", status: "status" },
   filings:     { id: "id", title: "title", filedAt: "filed_at" },
   extractions: { id: "id", filingId: "filing_id", payload: "payload" },
+}))
+
+vi.mock("@/lib/services-client", () => ({
+  refreshDocket: mockRefreshDocket,
 }))
 
 vi.mock("drizzle-orm", () => ({

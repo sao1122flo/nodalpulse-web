@@ -45,7 +45,7 @@ function makeChain(result: unknown[] = []) {
   const p = Promise.resolve(result)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const chain: any = { then: p.then.bind(p), catch: p.catch.bind(p) }
-  for (const m of ["from", "where", "innerJoin", "orderBy", "limit"]) {
+  for (const m of ["from", "where", "innerJoin", "leftJoin", "orderBy", "limit"]) {
     chain[m] = vi.fn(() => chain)
   }
   return chain
@@ -82,8 +82,9 @@ describe("DocketDetailPage", () => {
 
   it("renders filings, parties, and timeline when data exists", async () => {
     mockGetSession.mockResolvedValue({ user: { id: "user-1", email: "u@test.com" } })
-    // First call: filings query; second: tracking state
+    // Selects: (1) docket lookup, (2) filings+extractions leftJoin, (3) tracking state
     mockSelect
+      .mockReturnValueOnce(makeChain([{ id: "docket-1" }]))
       .mockReturnValueOnce(makeChain([FILING_ROW]))
       .mockReturnValueOnce(makeChain([]))
     const result = await DocketDetailPage({ params: Promise.resolve({ docketNumber: "59475" }) })
@@ -92,18 +93,22 @@ describe("DocketDetailPage", () => {
 
   it("renders zero-filings empty state without throwing notFound", async () => {
     mockGetSession.mockResolvedValue({ user: { id: "user-1", email: "u@test.com" } })
+    // Selects: (1) docket found, (2) filings → empty, (3) tracking → not tracked
     mockSelect
-      .mockReturnValueOnce(makeChain([]))  // no filings
-      .mockReturnValueOnce(makeChain([]))  // not tracked
+      .mockReturnValueOnce(makeChain([{ id: "docket-1" }]))
+      .mockReturnValueOnce(makeChain([]))
+      .mockReturnValueOnce(makeChain([]))
     const result = await DocketDetailPage({ params: Promise.resolve({ docketNumber: "99999" }) })
     expect(result).toBeDefined()
   })
 
   it("passes isTracked=true to TrackButton when user is tracking the docket", async () => {
     mockGetSession.mockResolvedValue({ user: { id: "user-1", email: "u@test.com" } })
+    // Selects: (1) docket lookup, (2) filings, (3) tracking record exists
     mockSelect
+      .mockReturnValueOnce(makeChain([{ id: "docket-1" }]))
       .mockReturnValueOnce(makeChain([FILING_ROW]))
-      .mockReturnValueOnce(makeChain([{ id: "ud-row-1" }])) // tracking record exists
+      .mockReturnValueOnce(makeChain([{ id: "ud-row-1" }]))
     const result = await DocketDetailPage({ params: Promise.resolve({ docketNumber: "59475" }) })
     expect(result).toBeDefined()
   })

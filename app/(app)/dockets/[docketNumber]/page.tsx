@@ -5,7 +5,7 @@ import Link from "next/link"
 import { auth } from "@/lib/auth"
 import { db } from "@/db/client"
 import { userDockets, dockets, filings, extractions } from "@/db/schema"
-import { and, eq, desc, sql } from "drizzle-orm"
+import { and, eq, desc } from "drizzle-orm"
 import { TrackButton } from "../TrackButton"
 
 export const metadata: Metadata = { title: "Docket" }
@@ -48,23 +48,31 @@ export default async function DocketDetailPage({
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session) redirect("/login")
 
-  // Filings for this docket number (via extraction payload — filings.docket_id
-  // is not yet populated by the pipeline; that migration happens in Phase 12b)
-  const filingRows = await db
-    .select({
-      id:        filings.id,
-      title:     filings.title,
-      docType:   filings.docType,
-      filedAt:   filings.filedAt,
-      sourceUrl: filings.sourceUrl,
-      filer:     filings.filer,
-      payload:   extractions.payload,
-    })
-    .from(extractions)
-    .innerJoin(filings, eq(extractions.filingId, filings.id))
-    .where(sql`${extractions.payload}->>'docket_number' = ${dn}`)
-    .orderBy(desc(filings.filedAt))
-    .limit(50)
+  // Look up the docket row — needed for both the filings query and tracking check
+  const [docketRow] = await db
+    .select({ id: dockets.id })
+    .from(dockets)
+    .where(and(eq(dockets.sourceId, PUCT_SOURCE_ID), eq(dockets.externalId, dn)))
+    .limit(1)
+
+  // All filings for this docket, with extraction payload where available
+  const filingRows = docketRow
+    ? await db
+        .select({
+          id:        filings.id,
+          title:     filings.title,
+          docType:   filings.docType,
+          filedAt:   filings.filedAt,
+          sourceUrl: filings.sourceUrl,
+          filer:     filings.filer,
+          payload:   extractions.payload,
+        })
+        .from(filings)
+        .leftJoin(extractions, eq(extractions.filingId, filings.id))
+        .where(eq(filings.docketId, docketRow.id))
+        .orderBy(desc(filings.filedAt))
+        .limit(50)
+    : []
 
   // Deduplicated parties across all filings
   const allParties = filingRows.flatMap(r => r.payload?.parties ?? [])
@@ -95,19 +103,17 @@ export default async function DocketDetailPage({
     })
     .sort((a, b) => a.date.localeCompare(b.date))
 
-  // Tracking state for the current user
-  const [trackRecord] = await db
-    .select({ id: userDockets.id })
-    .from(userDockets)
-    .innerJoin(dockets, eq(userDockets.docketId, dockets.id))
-    .where(
-      and(
-        eq(userDockets.userId, session.user.id),
-        eq(dockets.sourceId, PUCT_SOURCE_ID),
-        eq(dockets.externalId, dn),
-      ),
-    )
-    .limit(1)
+  // Tracking state — docketRow already found above, no need to re-join dockets
+  const [trackRecord] = docketRow
+    ? await db
+        .select({ id: userDockets.id })
+        .from(userDockets)
+        .where(and(
+          eq(userDockets.userId, session.user.id),
+          eq(userDockets.docketId, docketRow.id),
+        ))
+        .limit(1)
+    : [undefined]
 
   const isTracked = !!trackRecord
 

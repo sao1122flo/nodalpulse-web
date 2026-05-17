@@ -7,6 +7,7 @@ import { db } from "@/db/client"
 import { userDockets, dockets, filings, extractions } from "@/db/schema"
 import { and, eq, desc, sql } from "drizzle-orm"
 import type { Result } from "@/lib/types"
+import { refreshDocket } from "@/lib/services-client"
 
 // PUCT source UUID — stable, seeded by services on startup.
 const PUCT_SOURCE_ID = "0725032a-239f-475d-bdd5-251adad3ae05"
@@ -15,7 +16,7 @@ export async function trackDocket({
   docketNumber,
 }: {
   docketNumber: string
-}): Promise<Result<void>> {
+}): Promise<Result<{ warming: boolean }>> {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session) return { ok: false, error: "Unauthenticated" }
 
@@ -65,9 +66,19 @@ export async function trackDocket({
     .values({ userId: session.user.id, docketId: docketRow.id })
     .onConflictDoNothing()
 
+  // SERVICES_API_KEY must stay server-side only — never expose to client;
+  // client-controlled user_id is advisory, bearer token is the security boundary.
+  const warmResult = await refreshDocket(
+    { docket_number: dn, user_id: session.user.id },
+    3_000,
+  )
+  if (!warmResult.ok) {
+    console.error("[trackDocket] refresh-docket failed", { dn, error: warmResult.error })
+  }
+
   revalidatePath("/dockets")
   revalidatePath(`/dockets/${dn}`)
-  return { ok: true, value: undefined }
+  return { ok: true, value: { warming: !warmResult.ok } }
 }
 
 export async function untrackDocket({
