@@ -9,6 +9,8 @@ import {
   json,
   jsonb,
   numeric,
+  index,
+  unique,
 } from "drizzle-orm/pg-core"
 
 // Matches the JSONB payload written by services' extraction worker (schema_ver "1.0").
@@ -75,7 +77,37 @@ export const userProfiles = pgTable("user_profiles", {
   trackedDocketIds: uuid("tracked_docket_ids").array().notNull().default([]),
   trackedTags: json("tracked_tags").$type<string[]>().notNull().default([]),
   emailFormat: text("email_format").notNull().default("html"),
+  onboardingStep: integer("onboarding_step").notNull().default(0),
 })
+
+// ---------------------------------------------------------------------------
+// saved_searches
+// ---------------------------------------------------------------------------
+
+export interface SavedSearchQuery {
+  markets?: string[]
+  tdu_zones?: string[]
+  tags?: string[]
+  docket_ids?: string[]
+  text?: string
+}
+
+export const savedSearches = pgTable(
+  "saved_searches",
+  {
+    id:          uuid("id").defaultRandom().primaryKey(),
+    userId:      uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    name:        text("name").notNull(),
+    query:       jsonb("query").$type<SavedSearchQuery>().notNull().default({}),
+    notify:      boolean("notify").notNull().default(true),
+    createdAt:   timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    lastFiredAt: timestamp("last_fired_at", { withTimezone: true }),
+  },
+  (t) => [
+    unique("saved_searches_user_name_unique").on(t.userId, t.name),
+    index("saved_searches_user_created_idx").on(t.userId, t.createdAt),
+  ],
+)
 
 // ---------------------------------------------------------------------------
 // entitlements

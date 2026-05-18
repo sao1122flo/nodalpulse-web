@@ -40,11 +40,26 @@ vi.mock("@/lib/services-client", () => ({
   refreshDocket: mockRefreshDocket,
 }))
 
+vi.mock("@/lib/entitlements", () => ({
+  getEntitlements: vi.fn().mockResolvedValue({
+    tier: "starter",
+    trackedDockets: { limit: 5 },
+    savedSearches:  { limit: 2 },
+    dailyBrief: true,
+    briefHistory: { days: 30 },
+    qa: { limitPerDay: 0 },
+    teamSeats: { limit: 1 },
+    auditExport: false,
+    apiAccess: false,
+  }),
+}))
+
 vi.mock("drizzle-orm", () => ({
-  eq:   (...args: unknown[]) => ({ eq: args }),
-  and:  (...args: unknown[]) => args,
-  desc: (col: unknown) => ({ desc: col }),
-  sql:  new Proxy((() => ({})) as unknown as typeof import("drizzle-orm").sql, {
+  eq:    (...args: unknown[]) => ({ eq: args }),
+  and:   (...args: unknown[]) => args,
+  desc:  (col: unknown) => ({ desc: col }),
+  count: () => "count()",
+  sql:   new Proxy((() => ({})) as unknown as typeof import("drizzle-orm").sql, {
     apply: () => ({}),
     get:   () => () => ({}),
   }),
@@ -92,11 +107,12 @@ describe("docket actions", () => {
 
   it("trackDocket creates docket row and user_dockets row, then revalidates paths", async () => {
     mockGetSession.mockResolvedValue({ user: { id: "user-1", email: "u@test.com" } })
-    // 1st select: docket lookup → not found
-    // 2nd select: label lookup → no label
-    // 3rd select: re-fetch after insert → returns created row
-    // 4th select: user_dockets insert (handled by insert mock)
+    // 1st select: count existing userDockets (tier gate) → 0
+    // 2nd select: docket lookup → not found
+    // 3rd select: label lookup → no label
+    // 4th select: re-fetch after insert → returns created row
     mockSelect
+      .mockReturnValueOnce(makeSelectChain([{ ct: "0" }]))              // tier gate count
       .mockReturnValueOnce(makeSelectChain([]))                         // docket not found
       .mockReturnValueOnce(makeSelectChain([]))                         // no label filing
       .mockReturnValueOnce(makeSelectChain([{ id: "new-docket-uuid" }])) // re-fetch

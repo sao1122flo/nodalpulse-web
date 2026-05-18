@@ -3,8 +3,9 @@ import { redirect } from "next/navigation"
 import { headers } from "next/headers"
 import { auth } from "@/lib/auth"
 import { db } from "@/db/client"
-import { subscriptions } from "@/db/schema"
-import { eq } from "drizzle-orm"
+import { subscriptions, savedSearches } from "@/db/schema"
+import { count, eq } from "drizzle-orm"
+import { getEntitlements } from "@/lib/entitlements"
 import { createPortalSession } from "./actions"
 
 export const metadata: Metadata = { title: "Settings" }
@@ -90,16 +91,20 @@ export default async function SettingsPage({
   const params = await searchParams
   const checkoutDone = params.checkout === "success"
 
-  const [sub] = await db
-    .select({
-      status: subscriptions.status,
-      tier: subscriptions.tier,
-      stripeCustomerId: subscriptions.stripeCustomerId,
-      currentPeriodEnd: subscriptions.currentPeriodEnd,
-    })
-    .from(subscriptions)
-    .where(eq(subscriptions.userId, session.user.id))
-    .limit(1)
+  const [[sub], ents, [{ searchCount }]] = await Promise.all([
+    db
+      .select({
+        status: subscriptions.status,
+        tier: subscriptions.tier,
+        stripeCustomerId: subscriptions.stripeCustomerId,
+        currentPeriodEnd: subscriptions.currentPeriodEnd,
+      })
+      .from(subscriptions)
+      .where(eq(subscriptions.userId, session.user.id))
+      .limit(1),
+    getEntitlements(session.user.id),
+    db.select({ searchCount: count() }).from(savedSearches).where(eq(savedSearches.userId, session.user.id)),
+  ])
 
   return (
     <div className="px-8 py-8 max-w-2xl">
@@ -136,6 +141,12 @@ export default async function SettingsPage({
           >
             Manage &rarr;
           </a>
+        </div>
+        <div className="flex items-center justify-between py-2.5">
+          <span className="text-[var(--np-text-body)] text-[13px]">Saved searches</span>
+          <span className="text-[var(--np-text-muted)] text-[12px]">
+            {Number(searchCount)} of {ents.savedSearches.limit ?? "∞"} used
+          </span>
         </div>
       </SettingsCard>
 

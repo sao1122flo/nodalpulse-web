@@ -5,9 +5,10 @@ import { headers } from "next/headers"
 import { auth } from "@/lib/auth"
 import { db } from "@/db/client"
 import { userDockets, dockets, filings, extractions } from "@/db/schema"
-import { and, eq, desc, sql } from "drizzle-orm"
+import { and, count, eq, desc, sql } from "drizzle-orm"
 import type { Result } from "@/lib/types"
 import { refreshDocket } from "@/lib/services-client"
+import { getEntitlements } from "@/lib/entitlements"
 
 // PUCT source UUID — stable, seeded by services on startup.
 const PUCT_SOURCE_ID = "0725032a-239f-475d-bdd5-251adad3ae05"
@@ -23,6 +24,25 @@ export async function trackDocket({
   const dn = docketNumber.trim()
   if (!dn) return { ok: false, error: "Docket number is required" }
   if (dn.includes(" ")) return { ok: false, error: "Docket number must not contain spaces" }
+
+  // Tier-limit enforcement — applies everywhere trackDocket is called (onboarding + dockets page)
+  const ents = await getEntitlements(session.user.id)
+  const docketLimit = ents.trackedDockets.limit
+  if (docketLimit === 0) {
+    return { ok: false, error: "Upgrade to a paid plan to track dockets." }
+  }
+  if (docketLimit !== null) {
+    const [{ ct }] = await db
+      .select({ ct: count() })
+      .from(userDockets)
+      .where(eq(userDockets.userId, session.user.id))
+    if (Number(ct) >= docketLimit) {
+      return {
+        ok: false,
+        error: `You've reached your ${docketLimit}-docket limit. Upgrade at /pricing to track more.`,
+      }
+    }
+  }
 
   // Find or create the docket entity (UNIQUE on source_id + external_id)
   let [docketRow] = await db
