@@ -86,6 +86,7 @@ export const entitlements = pgTable("entitlements", {
     .notNull()
     .references(() => users.id),
   feature: text("feature").notNull(),
+  value: jsonb("value").$type<Record<string, unknown>>().notNull().default({}),
   expiresAt: timestamp("expires_at", { withTimezone: true }),
   grantedAt: timestamp("granted_at", { withTimezone: true }).defaultNow(),
 })
@@ -102,6 +103,7 @@ export const subscriptions = pgTable("subscriptions", {
   stripeCustomerId: text("stripe_customer_id"),
   stripeSubscriptionId: text("stripe_subscription_id"),
   status: text("status").notNull().default("trialing"),
+  tier: text("tier"),
   currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),

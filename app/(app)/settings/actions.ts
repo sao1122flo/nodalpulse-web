@@ -10,33 +10,6 @@ import { eq } from "drizzle-orm"
 
 const appUrl = () => process.env.NEXT_PUBLIC_APP_URL ?? "https://app.nodalpulse.com"
 
-export async function createCheckoutSession() {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session) throw new Error("Unauthenticated")
-
-  const priceId = process.env.STRIPE_PRICE_PRO
-  if (!priceId) throw new Error("STRIPE_PRICE_PRO is not configured")
-
-  const [sub] = await db
-    .select({ stripeCustomerId: subscriptions.stripeCustomerId })
-    .from(subscriptions)
-    .where(eq(subscriptions.userId, session.user.id))
-    .limit(1)
-
-  const checkoutSession = await stripe.checkout.sessions.create({
-    mode: "subscription",
-    ...(sub?.stripeCustomerId
-      ? { customer: sub.stripeCustomerId }
-      : { customer_email: session.user.email }),
-    client_reference_id: session.user.id,
-    line_items: [{ price: priceId, quantity: 1 }],
-    success_url: `${appUrl()}/settings?checkout=success`,
-    cancel_url: `${appUrl()}/settings`,
-  })
-
-  redirect(checkoutSession.url!)
-}
-
 export async function createPortalSession() {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session) throw new Error("Unauthenticated")

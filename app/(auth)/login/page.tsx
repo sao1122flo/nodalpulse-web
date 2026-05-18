@@ -1,11 +1,15 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { Suspense, useState, useEffect } from "react"
+import { useSearchParams } from "next/navigation"
 import { authClient } from "@/lib/auth-client"
 import { MicrosoftSignInButton } from "./MicrosoftSignInButton"
 import { GoogleSignInButton } from "./GoogleSignInButton"
 
-export default function LoginPage() {
+function LoginPageInner() {
+  const searchParams = useSearchParams()
+  const callbackURL = searchParams.get("callbackURL") ?? "/dashboard"
+
   const [email, setEmail] = useState("")
   const [magicStatus, setMagicStatus] = useState<"idle" | "loading" | "sent" | "error">("idle")
   const [magicError, setMagicError] = useState("")
@@ -33,7 +37,7 @@ export default function LoginPage() {
     setOAuthError("")
     const result = await authClient.signIn.social({
       provider,
-      callbackURL: "/dashboard",
+      callbackURL,
     })
     if (result?.error) {
       setOAuthError("Sign-in cancelled. Try again?")
@@ -50,7 +54,7 @@ export default function LoginPage() {
 
     const result = await authClient.signIn.magicLink({
       email,
-      callbackURL: "/dashboard",
+      callbackURL,
     })
 
     if (result.error) {
@@ -199,5 +203,13 @@ export default function LoginPage() {
         .
       </p>
     </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginPageInner />
+    </Suspense>
   )
 }

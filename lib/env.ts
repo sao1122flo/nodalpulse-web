@@ -10,7 +10,7 @@ const envSchema = z.object({
   GOOGLE_CLIENT_SECRET: z.string().optional(),
   STRIPE_SECRET_KEY: z.string().startsWith("sk_"),
   STRIPE_WEBHOOK_SECRET: z.string().startsWith("whsec_"),
-  STRIPE_PRICE_INDIVIDUAL: z.string().startsWith("price_").optional(),
+  STRIPE_PRICE_STARTER: z.string().startsWith("price_").optional(),
   STRIPE_PRICE_PRO: z.string().startsWith("price_").optional(),
   STRIPE_PRICE_TEAM: z.string().startsWith("price_").optional(),
   STRIPE_PRICE_ORG: z.string().startsWith("price_").optional(),

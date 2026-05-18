@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from "next/server"
 import { stripe } from "@/lib/stripe"
 import { headers } from "next/headers"
 import { db } from "@/db/client"
-import { subscriptions, entitlements } from "@/db/schema"
-import { eq, and } from "drizzle-orm"
+import { entitlements, subscriptions } from "@/db/schema"
+import { eq } from "drizzle-orm"
+import { applyTierEntitlements } from "@/lib/entitlements"
+import { resolveTier } from "@/lib/tiers"
 
 export async function POST(req: NextRequest) {
   const body = await req.text()
@@ -26,39 +28,62 @@ export async function POST(req: NextRequest) {
 
   switch (event.type) {
     case "customer.subscription.created": {
-      // Mirrors checkout.session.completed for subscriptions created outside Hosted Checkout
-      // (e.g. manually via API or Stripe dashboard). No-op for now — covered by checkout.session.completed.
+      // Covered by checkout.session.completed for Hosted Checkout flows.
       break
     }
 
     case "invoice.payment_succeeded": {
-      // Fires on every successful charge (initial + renewals).
-      // Use this for receipts or per-renewal entitlement refresh if needed.
+      // Available for receipt emails or per-renewal entitlement refresh in future prompts.
       break
     }
 
     case "invoice.payment_failed": {
-      // Stripe will retry and eventually move the subscription to past_due / unpaid.
-      // customer.subscription.updated handles the status sync — no additional action needed here.
+      // Stripe retries and moves the subscription to past_due / unpaid.
+      // customer.subscription.updated handles the status sync.
       break
     }
 
     case "checkout.session.completed": {
       const session = event.data.object
       const userId = session.client_reference_id
-      const stripeCustomerId = typeof session.customer === "string" ? session.customer : null
+      const stripeCustomerId =
+        typeof session.customer === "string" ? session.customer : null
       const stripeSubscriptionId =
         typeof session.subscription === "string" ? session.subscription : null
 
       if (!userId || !stripeCustomerId || !stripeSubscriptionId) break
 
       const stripeSub = await stripe.subscriptions.retrieve(stripeSubscriptionId, {
-        expand: ["latest_invoice"],
+        expand: ["latest_invoice", "items"],
       })
-      const inv = stripeSub.latest_invoice
-      const currentPeriodEnd =
-        typeof inv === "object" && inv !== null && "period_end" in inv
-          ? new Date((inv as { period_end: number }).period_end * 1000)
+
+      const priceId = stripeSub.items.data[0]?.price?.id
+      if (!priceId) {
+        console.error(
+          "checkout.session.completed: no price ID on subscription",
+          stripeSubscriptionId
+        )
+        break
+      }
+
+      const tier = resolveTier(priceId)
+      if (!tier) {
+        console.error("checkout.session.completed: unrecognised price ID", priceId)
+        break
+      }
+
+      const rawEnd = (stripeSub as unknown as { current_period_end?: number })
+        .current_period_end
+      const invEnd =
+        typeof stripeSub.latest_invoice === "object" &&
+        stripeSub.latest_invoice !== null &&
+        "period_end" in stripeSub.latest_invoice
+          ? (stripeSub.latest_invoice as { period_end: number }).period_end
+          : null
+      const expiresAt = rawEnd
+        ? new Date(rawEnd * 1000)
+        : invEnd
+          ? new Date(invEnd * 1000)
           : null
 
       await db
@@ -68,23 +93,15 @@ export async function POST(req: NextRequest) {
           stripeCustomerId,
           stripeSubscriptionId,
           status: "active",
-          currentPeriodEnd,
+          tier,
+          currentPeriodEnd: expiresAt,
         })
         .onConflictDoUpdate({
           target: subscriptions.userId,
-          set: { stripeCustomerId, stripeSubscriptionId, status: "active", currentPeriodEnd },
+          set: { stripeCustomerId, stripeSubscriptionId, status: "active", tier, currentPeriodEnd: expiresAt },
         })
 
-      // Replace any existing pro entitlement for this user
-      await db
-        .delete(entitlements)
-        .where(and(eq(entitlements.userId, userId), eq(entitlements.feature, "daily-brief")))
-      await db.insert(entitlements).values({
-        userId,
-        feature: "daily-brief",
-        expiresAt: currentPeriodEnd,
-      })
-
+      await applyTierEntitlements(userId, priceId, expiresAt)
       break
     }
 
@@ -92,8 +109,11 @@ export async function POST(req: NextRequest) {
       const stripeSub = event.data.object
       const stripeSubscriptionId = stripeSub.id
       const status = stripeSub.status
-      // current_period_end removed from SDK v22 types; still present in event payload
-      const rawEnd = (stripeSub as unknown as { current_period_end?: number }).current_period_end
+      const priceId = stripeSub.items.data[0]?.price?.id
+      const tier = priceId ? resolveTier(priceId) : null
+
+      const rawEnd = (stripeSub as unknown as { current_period_end?: number })
+        .current_period_end
       const currentPeriodEnd = rawEnd ? new Date(rawEnd * 1000) : null
 
       const [row] = await db
@@ -105,13 +125,14 @@ export async function POST(req: NextRequest) {
 
       await db
         .update(subscriptions)
-        .set({ status, currentPeriodEnd })
+        .set({ status, tier, currentPeriodEnd })
         .where(eq(subscriptions.stripeSubscriptionId, stripeSubscriptionId))
 
-      await db
-        .update(entitlements)
-        .set({ expiresAt: currentPeriodEnd })
-        .where(and(eq(entitlements.userId, row.userId), eq(entitlements.feature, "daily-brief")))
+      // Re-apply entitlements on every update — handles upgrades, downgrades,
+      // renewals, and cancel-at-period-end (same tier, same expiresAt, idempotent).
+      if (priceId) {
+        await applyTierEntitlements(row.userId, priceId, currentPeriodEnd)
+      }
 
       break
     }
@@ -129,14 +150,12 @@ export async function POST(req: NextRequest) {
 
       await db
         .update(subscriptions)
-        .set({ status: "cancelled" })
+        .set({ status: "cancelled", tier: null })
         .where(eq(subscriptions.stripeSubscriptionId, stripeSubscriptionId))
 
-      // Expire the entitlement immediately on cancellation
-      await db
-        .update(entitlements)
-        .set({ expiresAt: new Date() })
-        .where(and(eq(entitlements.userId, row.userId), eq(entitlements.feature, "daily-brief")))
+      // Hard-delete all entitlement rows. expiresAt was already at period end,
+      // but this catches immediate cancellations and keeps the table clean.
+      await db.delete(entitlements).where(eq(entitlements.userId, row.userId))
 
       break
     }

@@ -47,11 +47,11 @@ Create all four in **Stripe Dashboard → Product catalog → Add product**. Use
 
 ---
 
-#### 1. NodalPulse Individual — $49 / month
+#### 1. NodalPulse Starter — $49 / month
 
 | Field | Value |
 |---|---|
-| **Name** | NodalPulse Individual |
+| **Name** | NodalPulse Starter |
 | **Description** | The morning regulatory brief for the Texas electricity market. Every PUCT filing, NPRR amendment, FERC action, and Texas legislative item that touches your role — sourced and cited, in your inbox by 6:30 CT every weekday. Built for solo consultants, junior analysts, and anyone tracking ERCOT regulatory without a dedicated reg-tech team. |
 | **Statement descriptor** | `NODALPULSE` |
 | **Tax behavior** | Exclusive |
@@ -59,7 +59,9 @@ Create all four in **Stripe Dashboard → Product catalog → Add product**. Use
 | **Trial period** | 14 days |
 | **Price description** | Monthly subscription · cancel anytime · 14-day free trial |
 
-Save price ID as `STRIPE_PRICE_INDIVIDUAL` in Railway.
+Save price ID as `STRIPE_PRICE_STARTER` in Railway.
+
+> **Migration note (P1):** The env var was previously named `STRIPE_PRICE_INDIVIDUAL`. Rename the Railway variable to `STRIPE_PRICE_STARTER` before deploying the P1 code drop.
 
 ---
 
@@ -75,7 +77,7 @@ Save price ID as `STRIPE_PRICE_INDIVIDUAL` in Railway.
 | **Trial period** | 14 days |
 | **Price description** | Monthly subscription · cancel anytime · 14-day free trial |
 
-Save price ID as `STRIPE_PRICE_PRO` in Railway. **This is the price wired to the Settings → Subscribe button at launch.**
+Save price ID as `STRIPE_PRICE_PRO` in Railway.
 
 ---
 
@@ -144,12 +146,63 @@ In Stripe Dashboard → **Billing → Customer portal**:
 
 This powers the **Manage billing** button in Settings.
 
-### 5e. Test the full flow (test mode)
+### 5e. P1 deploy runbook (tier-aware pricing)
 
-1. Set `STRIPE_SECRET_KEY=sk_test_...` and use a test `STRIPE_PRICE_PRO` price ID.
-2. Go to `/settings` → click **Subscribe** → use Stripe test card `4242 4242 4242 4242`.
-3. Verify `subscriptions` and `entitlements` rows are written in the DB.
-4. Confirm Settings page updates to show **Pro plan · Active**.
+Execute in this exact order. Do not skip steps.
+
+**Step 1 — Run the DB migration**
+
+```sh
+railway run --service nodalpulse-web npx drizzle-kit migrate
+```
+
+Adds `subscriptions.tier` (nullable text) and `entitlements.value` (jsonb, default `{}`).
+Verify: `SELECT column_name FROM information_schema.columns WHERE table_name IN ('subscriptions','entitlements') AND column_name IN ('tier','value');`
+
+**Step 2 — Rename Railway env var**
+
+In Railway → nodalpulse-web → Variables:
+- Delete `STRIPE_PRICE_INDIVIDUAL`
+- Add `STRIPE_PRICE_STARTER` with the same `price_...` value
+
+Do this before deploying the new code. The old code reads `STRIPE_PRICE_PRO` (unaffected).
+
+**Step 3 — Deploy the code**
+
+Push / trigger Railway redeploy. The app now reads `STRIPE_PRICE_STARTER` and all four price ID env vars for tier routing.
+
+**Step 4 — Run the backfill script**
+
+```sh
+railway run --service nodalpulse-web tsx scripts/backfill-tier-entitlements.ts
+```
+
+Idempotent — safe to re-run if it fails mid-way.
+
+**Step 5 — Verify in Postgres**
+
+```sql
+-- Every active subscription should have a non-null tier
+SELECT id, user_id, tier, status FROM subscriptions WHERE status = 'active';
+
+-- Each user should have multiple entitlement rows matching their tier
+SELECT user_id, feature, value, expires_at
+FROM entitlements
+ORDER BY user_id, feature;
+```
+
+Expected per-tier entitlement row counts: Starter=5, Pro=6, Team=7, Org=9.
+
+---
+
+### 5f. Test the full flow (test mode)
+
+1. Set `STRIPE_SECRET_KEY=sk_test_...` and all four `STRIPE_PRICE_*` test price IDs.
+2. Go to `/pricing` → click **Start trial** on a tier → use Stripe test card `4242 4242 4242 4242`.
+3. Verify `subscriptions` and `entitlements` rows are written with the correct tier.
+4. Confirm `/pricing` shows **Current plan** on the subscribed tier card.
+5. Test upgrade/downgrade via the portal: webhook fires → entitlements replaced.
+6. Test cancellation: `subscription.deleted` → entitlement rows deleted.
 
 ---
 

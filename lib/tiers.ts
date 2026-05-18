@@ -1,0 +1,123 @@
+export type Tier = "starter" | "pro" | "team" | "org"
+
+export interface EntitlementRow {
+  feature: string
+  value: Record<string, unknown>
+}
+
+export const TIER_ENTITLEMENTS: Record<Tier, EntitlementRow[]> = {
+  starter: [
+    { feature: "daily_brief",      value: {} },
+    { feature: "tracked_dockets",  value: { limit: 5 } },
+    { feature: "saved_searches",   value: { limit: 2 } },
+    { feature: "brief_history",    value: { days: 30 } },
+    { feature: "team_seats",       value: { limit: 1 } },
+  ],
+  pro: [
+    { feature: "daily_brief",      value: {} },
+    { feature: "tracked_dockets",  value: { limit: 25 } },
+    { feature: "saved_searches",   value: { limit: 10 } },
+    { feature: "brief_history",    value: { days: 365 } },
+    { feature: "qa",               value: { limit_per_day: 30 } },
+    { feature: "team_seats",       value: { limit: 1 } },
+  ],
+  team: [
+    { feature: "daily_brief",      value: {} },
+    { feature: "tracked_dockets",  value: { limit: 100 } },
+    { feature: "saved_searches",   value: { limit: 50 } },
+    { feature: "brief_history",    value: { days: 1095 } },
+    { feature: "qa",               value: { limit_per_day: 100 } },
+    { feature: "team_seats",       value: { limit: 5 } },
+    { feature: "sla",              value: { uptime: 0.995 } },
+  ],
+  org: [
+    { feature: "daily_brief",      value: {} },
+    { feature: "tracked_dockets",  value: { limit: null } },
+    { feature: "saved_searches",   value: { limit: null } },
+    { feature: "brief_history",    value: { days: null } },
+    { feature: "qa",               value: { limit_per_day: 300 } },
+    { feature: "team_seats",       value: { limit: 25 } },
+    { feature: "sla",              value: { uptime: 0.999 } },
+    { feature: "audit_export",     value: {} },
+    { feature: "api_access",       value: {} },
+  ],
+}
+
+export function resolveTier(priceId: string): Tier | null {
+  if (!priceId) return null
+  const candidates: [string | undefined, Tier][] = [
+    [process.env.STRIPE_PRICE_STARTER, "starter"],
+    [process.env.STRIPE_PRICE_PRO,     "pro"],
+    [process.env.STRIPE_PRICE_TEAM,    "team"],
+    [process.env.STRIPE_PRICE_ORG,     "org"],
+  ]
+  for (const [envVal, tier] of candidates) {
+    if (envVal && envVal === priceId) return tier
+  }
+  return null
+}
+
+// ---------------------------------------------------------------------------
+// Display data — consumed by /pricing page; derived from TIER_ENTITLEMENTS
+// so the two cannot diverge.
+// ---------------------------------------------------------------------------
+
+export interface TierDisplay {
+  tier: Tier
+  name: string
+  price: string
+  period: string
+  highlight: boolean
+  contactOnly: boolean
+}
+
+export const TIER_DISPLAY: TierDisplay[] = [
+  { tier: "starter", name: "Starter", price: "$49",    period: "/mo", highlight: false, contactOnly: false },
+  { tier: "pro",     name: "Pro",     price: "$199",   period: "/mo", highlight: true,  contactOnly: false },
+  { tier: "team",    name: "Team",    price: "$599",   period: "/mo", highlight: false, contactOnly: false },
+  { tier: "org",     name: "Org",     price: "$1,499", period: "/mo", highlight: false, contactOnly: true  },
+]
+
+export interface FeatureRow {
+  label: string
+  values: Record<"free" | Tier, string>
+}
+
+export const FEATURE_MATRIX: FeatureRow[] = [
+  {
+    label: "Daily brief",
+    values: { free: "Public digest only", starter: "Personalized", pro: "Personalized", team: "Personalized", org: "Personalized" },
+  },
+  {
+    label: "Tracked dockets",
+    values: { free: "—", starter: "5", pro: "25", team: "100", org: "Unlimited" },
+  },
+  {
+    label: "Saved searches",
+    values: { free: "—", starter: "2", pro: "10", team: "50", org: "Unlimited" },
+  },
+  {
+    label: "Brief history",
+    values: { free: "—", starter: "30 days", pro: "1 year", team: "3 years", org: "Unlimited" },
+  },
+  {
+    label: "Q&A",
+    values: { free: "—", starter: "—", pro: "30 q/day", team: "100 q/day", org: "300 q/day" },
+  },
+  {
+    label: "Team seats",
+    values: { free: "—", starter: "1", pro: "1", team: "5", org: "25" },
+  },
+  {
+    label: "Audit export",
+    values: { free: "—", starter: "—", pro: "—", team: "—", org: "✓" },
+  },
+  {
+    label: "API access",
+    values: { free: "—", starter: "—", pro: "—", team: "—", org: "✓" },
+  },
+  {
+    label: "SLA",
+    values: { free: "—", starter: "—", pro: "—", team: "99.5%", org: "99.9%" },
+  },
+]

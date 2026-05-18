@@ -5,7 +5,7 @@ import { auth } from "@/lib/auth"
 import { db } from "@/db/client"
 import { subscriptions } from "@/db/schema"
 import { eq } from "drizzle-orm"
-import { createCheckoutSession, createPortalSession } from "./actions"
+import { createPortalSession } from "./actions"
 
 export const metadata: Metadata = { title: "Settings" }
 
@@ -93,6 +93,7 @@ export default async function SettingsPage({
   const [sub] = await db
     .select({
       status: subscriptions.status,
+      tier: subscriptions.tier,
       stripeCustomerId: subscriptions.stripeCustomerId,
       currentPeriodEnd: subscriptions.currentPeriodEnd,
     })
@@ -178,7 +179,9 @@ export default async function SettingsPage({
             <>
               <div>
                 <p className="text-[var(--np-text-body)] text-[13px] font-medium">
-                  Pro plan · Active
+                  {sub.tier
+                    ? `${sub.tier.charAt(0).toUpperCase()}${sub.tier.slice(1)} plan · Active`
+                    : "Active subscription"}
                 </p>
                 {sub.currentPeriodEnd && (
                   <p className="text-[var(--np-text-muted)] text-[12px] mt-0.5">
@@ -238,20 +241,18 @@ export default async function SettingsPage({
                   </p>
                 )}
               </div>
-              <form action={createCheckoutSession}>
-                <button
-                  type="submit"
-                  className="
-                    min-h-11 px-4 rounded-[var(--np-radius-md)]
-                    border border-[var(--np-accent)]
-                    text-[var(--np-accent-text)] text-[13px]
-                    hover:bg-[var(--np-accent)] hover:text-white
-                    transition-colors cursor-pointer
-                  "
-                >
-                  Resubscribe
-                </button>
-              </form>
+              <a
+                href="/pricing"
+                className="
+                  min-h-11 px-4 rounded-[var(--np-radius-md)]
+                  border border-[var(--np-accent)]
+                  text-[var(--np-accent-text)] text-[13px]
+                  hover:bg-[var(--np-accent)] hover:text-white
+                  transition-colors inline-flex items-center
+                "
+              >
+                Resubscribe
+              </a>
             </>
           ) : (
             <>
@@ -263,20 +264,18 @@ export default async function SettingsPage({
                   Subscribe to unlock full access.
                 </p>
               </div>
-              <form action={createCheckoutSession}>
-                <button
-                  type="submit"
-                  className="
-                    min-h-11 px-4 rounded-[var(--np-radius-md)]
-                    border border-[var(--np-accent)]
-                    text-[var(--np-accent-text)] text-[13px]
-                    hover:bg-[var(--np-accent)] hover:text-white
-                    transition-colors cursor-pointer
-                  "
-                >
-                  Subscribe
-                </button>
-              </form>
+              <a
+                href="/pricing"
+                className="
+                  min-h-11 px-4 rounded-[var(--np-radius-md)]
+                  border border-[var(--np-accent)]
+                  text-[var(--np-accent-text)] text-[13px]
+                  hover:bg-[var(--np-accent)] hover:text-white
+                  transition-colors inline-flex items-center
+                "
+              >
+                View plans
+              </a>
             </>
           )}
         </div>
