@@ -4,9 +4,7 @@ import { headers } from "next/headers"
 import { auth } from "@/lib/auth"
 import { getEntitlements } from "@/lib/entitlements"
 import { askQuestion } from "@/lib/services-client"
-import type { QnaCitation, QnaResult } from "@/lib/services-client"
-
-export type { QnaCitation }
+import type { QnaResult } from "@/lib/services-client"
 
 export type AskResult =
   | { ok: true; value: QnaResult }

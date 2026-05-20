@@ -2,7 +2,7 @@
 
 import { useRef, useState, useTransition } from "react"
 import { sendQuestion } from "./actions"
-import type { QnaCitation } from "./actions"
+import type { QnaCitation } from "@/lib/services-client"
 
 interface Turn {
   question: string
