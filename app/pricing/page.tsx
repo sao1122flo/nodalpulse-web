@@ -9,7 +9,6 @@ import {
   type Tier,
 } from "@/lib/tiers"
 import { createTieredCheckoutSession } from "./actions"
-import { createPortalSession } from "@/app/(app)/settings/actions"
 
 export const metadata: Metadata = {
   title: "Pricing — NodalPulse",
@@ -333,9 +332,11 @@ function TierCTA({
   }
 
   if (isLoggedIn && currentTier !== null) {
-    // Has a different active plan — redirect to portal for pro-rated switch
+    // Has a different plan — go to checkout with existing customer attached.
+    // Stripe creates a new subscription; the webhook upserts the subscription row.
+    const action = createTieredCheckoutSession.bind(null, tier, returnPath)
     return (
-      <form action={createPortalSession}>
+      <form action={action}>
         <button
           type="submit"
           className={`${baseBtn} border border-[var(--np-border)] text-[var(--np-text-body)] hover:border-[var(--np-border-strong)] cursor-pointer`}

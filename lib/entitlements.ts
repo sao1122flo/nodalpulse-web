@@ -36,6 +36,17 @@ export async function getEntitlements(userId: string): Promise<EntitlementSet> {
   const tier = (subRows[0]?.tier ?? null) as Tier | null
   const byFeature = Object.fromEntries(entRows.map(r => [r.feature, r.value ?? {}]))
 
+  // Self-heal: if the DB entitlements row is missing features that exist in
+  // TIER_ENTITLEMENTS[tier] (e.g. because a new feature was added after the user
+  // subscribed), fill them in from code. The next webhook event will persist them.
+  if (tier) {
+    for (const ent of TIER_ENTITLEMENTS[tier]) {
+      if (!(ent.feature in byFeature)) {
+        byFeature[ent.feature] = ent.value
+      }
+    }
+  }
+
   const dockets  = byFeature["tracked_dockets"]  as { limit: number | null } | undefined
   const searches = byFeature["saved_searches"]    as { limit: number | null } | undefined
   const history  = byFeature["brief_history"]     as { days: number | null }  | undefined
