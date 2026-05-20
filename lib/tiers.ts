@@ -11,6 +11,7 @@ export const TIER_ENTITLEMENTS: Record<Tier, EntitlementRow[]> = {
     { feature: "tracked_dockets",  value: { limit: 5 } },
     { feature: "saved_searches",   value: { limit: 2 } },
     { feature: "brief_history",    value: { days: 30 } },
+    { feature: "qa",               value: { limit_per_day: 10 } },
     { feature: "team_seats",       value: { limit: 1 } },
   ],
   pro: [
@@ -102,7 +103,7 @@ export const FEATURE_MATRIX: FeatureRow[] = [
   },
   {
     label: "Q&A",
-    values: { free: "—", starter: "—", pro: "30 q/day", team: "100 q/day", org: "300 q/day" },
+    values: { free: "—", starter: "10 q/day", pro: "30 q/day", team: "100 q/day", org: "300 q/day" },
   },
   {
     label: "Team seats",

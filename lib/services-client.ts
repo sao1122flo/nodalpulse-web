@@ -110,3 +110,99 @@ export interface LlmCostsResult {
 export function getLlmCosts(days: number = 7): Promise<Result<LlmCostsResult, ServicesError>> {
   return get("/admin/llm-costs", { days }, 60)
 }
+
+export interface SavedSearchFiling {
+  id: string
+  title: string
+  source_slug: string
+  filed_at: string
+  url: string | null
+}
+
+export interface SavedSearchFireResult {
+  saved_search_id: string
+  filing_count: number
+  filings: SavedSearchFiling[]
+}
+
+export function fireSavedSearch(params: {
+  user_id: string
+  saved_search_id: string
+}): Promise<Result<SavedSearchFireResult, ServicesError>> {
+  return post("/saved-search/fire", params, 30_000)
+}
+
+// ── Q&A ───────────────────────────────────────────────────────────────────────
+
+export interface QnaCitation {
+  filing_id: string
+  title: string
+  source_url: string | null
+  docket_number: string | null
+  relevance_note: string
+}
+
+export interface QnaResult {
+  answer: string
+  citations: QnaCitation[]
+  conversation_id: string
+  tokens_used: {
+    input: number
+    output: number
+    cache_read: number
+    cache_creation: number
+  }
+  cost_estimate: number
+  used_today: number
+  limit_per_day: number
+}
+
+export interface QnaRateLimitError {
+  error: "rate_limit"
+  limit: number
+  used: number
+  resets_at: string
+}
+
+export interface QnaNoPredicatesError {
+  error: "no_predicates"
+  message: string
+  actions: Array<{ label: string; href: string }>
+}
+
+export interface QnaUnavailableError {
+  error: "qa_not_available"
+  message: string
+  upgrade_url: string
+}
+
+export interface QnaNoFilingsError {
+  error: "no_filings"
+  message: string
+}
+
+export type QnaServiceError =
+  | QnaRateLimitError
+  | QnaNoPredicatesError
+  | QnaUnavailableError
+  | QnaNoFilingsError
+
+export function askQuestion(params: {
+  user_id: string
+  question: string
+  conversation_id?: string
+  limit_per_day: number
+}): Promise<Result<QnaResult, ServicesError>> {
+  return post("/qna", params, 60_000)
+}
+
+export interface QnaUsageResult {
+  user_id: string
+  used_today: number
+}
+
+export function getQnaUsage(
+  userId: string,
+): Promise<Result<QnaUsageResult, ServicesError>> {
+  return get("/qna/usage", { user_id: userId })
+}

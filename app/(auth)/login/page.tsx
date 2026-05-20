@@ -8,7 +8,10 @@ import { GoogleSignInButton } from "./GoogleSignInButton"
 
 function LoginPageInner() {
   const searchParams = useSearchParams()
-  const callbackURL = searchParams.get("callbackURL") ?? "/dashboard"
+  const rawCallback = searchParams.get("callbackURL") ?? "/dashboard"
+  // Reject absolute URLs and protocol-relative URLs to block open-redirect via crafted login links.
+  const callbackURL =
+    rawCallback.startsWith("/") && !rawCallback.includes("//") ? rawCallback : "/dashboard"
 
   const [email, setEmail] = useState("")
   const [magicStatus, setMagicStatus] = useState<"idle" | "loading" | "sent" | "error">("idle")

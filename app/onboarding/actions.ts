@@ -9,6 +9,23 @@ import { getEntitlements } from "@/lib/entitlements"
 import { recomposeBrief } from "@/lib/services-client"
 import type { Result } from "@/lib/types"
 import type { SavedSearchQuery } from "@/db/schema"
+import {
+  createSavedSearch as _createSavedSearch,
+  deleteSavedSearch as _deleteSavedSearch,
+} from "@/app/(app)/saved-searches/actions"
+
+// Thin async wrappers so onboarding components can import from one place.
+// ("use server" files may only export async functions — barrel re-exports are not allowed.)
+export async function createSavedSearch(
+  name: string,
+  query: SavedSearchQuery,
+): Promise<Result<{ id: string }>> {
+  return _createSavedSearch(name, query)
+}
+
+export async function deleteSavedSearch(id: string): Promise<Result<void>> {
+  return _deleteSavedSearch(id)
+}
 
 // ---------------------------------------------------------------------------
 // Internal helper
@@ -118,61 +135,6 @@ export async function advanceOnboarding(toStep: number): Promise<void> {
     .update(userProfiles)
     .set({ onboardingStep: sql`GREATEST(${userProfiles.onboardingStep}, ${toStep})` })
     .where(eq(userProfiles.userId, session.user.id))
-}
-
-// ---------------------------------------------------------------------------
-// Step 4: saved search CRUD
-// ---------------------------------------------------------------------------
-
-export async function createSavedSearch(
-  name: string,
-  query: SavedSearchQuery,
-): Promise<Result<{ id: string }>> {
-  const session = await getSession()
-  const userId = session.user.id
-
-  const ents = await getEntitlements(userId)
-  const limit = ents.savedSearches.limit
-
-  if (limit === 0) {
-    return { ok: false, error: "Upgrade to a paid plan to create saved searches." }
-  }
-
-  if (limit !== null) {
-    const [{ ct }] = await db
-      .select({ ct: count() })
-      .from(savedSearches)
-      .where(eq(savedSearches.userId, userId))
-    if (Number(ct) >= limit) {
-      return {
-        ok: false,
-        error: `You've reached your ${limit} saved search limit. Upgrade at /pricing for more.`,
-      }
-    }
-  }
-
-  const trimmed = name.trim()
-  if (!trimmed) return { ok: false, error: "Search name is required." }
-
-  const [row] = await db
-    .insert(savedSearches)
-    .values({ userId, name: trimmed, query })
-    .onConflictDoNothing()
-    .returning({ id: savedSearches.id })
-
-  if (!row) {
-    return { ok: false, error: `A saved search named "${trimmed}" already exists.` }
-  }
-
-  return { ok: true, value: { id: row.id } }
-}
-
-export async function deleteSavedSearch(id: string): Promise<Result<void>> {
-  const session = await getSession()
-  await db
-    .delete(savedSearches)
-    .where(and(eq(savedSearches.id, id), eq(savedSearches.userId, session.user.id)))
-  return { ok: true, value: undefined }
 }
 
 // ---------------------------------------------------------------------------

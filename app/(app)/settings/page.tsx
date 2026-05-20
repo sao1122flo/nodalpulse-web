@@ -3,10 +3,13 @@ import { redirect } from "next/navigation"
 import { headers } from "next/headers"
 import { auth } from "@/lib/auth"
 import { db } from "@/db/client"
-import { subscriptions, savedSearches } from "@/db/schema"
-import { count, eq } from "drizzle-orm"
+import { subscriptions } from "@/db/schema"
+import { eq } from "drizzle-orm"
 import { getEntitlements } from "@/lib/entitlements"
+import { getQnaUsage } from "@/lib/services-client"
 import { createPortalSession } from "./actions"
+import { listSavedSearches } from "@/app/(app)/saved-searches/actions"
+import { SavedSearchesSettings } from "./SavedSearchesSettings"
 
 export const metadata: Metadata = { title: "Settings" }
 
@@ -91,7 +94,7 @@ export default async function SettingsPage({
   const params = await searchParams
   const checkoutDone = params.checkout === "success"
 
-  const [[sub], ents, [{ searchCount }]] = await Promise.all([
+  const [[sub], ents, savedSearchRows, qnaUsageResult] = await Promise.all([
     db
       .select({
         status: subscriptions.status,
@@ -103,8 +106,11 @@ export default async function SettingsPage({
       .where(eq(subscriptions.userId, session.user.id))
       .limit(1),
     getEntitlements(session.user.id),
-    db.select({ searchCount: count() }).from(savedSearches).where(eq(savedSearches.userId, session.user.id)),
+    listSavedSearches(),
+    getQnaUsage(session.user.id).catch(() => null),
   ])
+
+  const qnaUsedToday = qnaUsageResult?.ok ? qnaUsageResult.value.used_today : null
 
   return (
     <div className="px-8 py-8 max-w-2xl">
@@ -142,11 +148,53 @@ export default async function SettingsPage({
             Manage &rarr;
           </a>
         </div>
+        <div className="py-2.5 border-b border-[var(--np-border)]">
+          <p className="text-[var(--np-text-body)] text-[13px] mb-2">Saved searches</p>
+          {ents.savedSearches.limit === 0 ? (
+            <div className="flex items-center justify-between">
+              <p className="text-[var(--np-text-muted)] text-[12px]">Available on paid plans.</p>
+              <a
+                href="/pricing"
+                className="text-[var(--np-accent-text)] text-[12px] hover:text-[var(--np-accent-hover)] transition-colors"
+              >
+                View plans →
+              </a>
+            </div>
+          ) : (
+            <SavedSearchesSettings
+              initialSearches={savedSearchRows}
+              limit={ents.savedSearches.limit}
+            />
+          )}
+        </div>
+
+        {/* Q&A usage */}
         <div className="flex items-center justify-between py-2.5">
-          <span className="text-[var(--np-text-body)] text-[13px]">Saved searches</span>
-          <span className="text-[var(--np-text-muted)] text-[12px]">
-            {Number(searchCount)} of {ents.savedSearches.limit ?? "∞"} used
-          </span>
+          <div>
+            <span className="text-[var(--np-text-body)] text-[13px]">Q&A</span>
+            {ents.qa.limitPerDay !== null && ents.qa.limitPerDay > 0 && (
+              <p className="text-[var(--np-text-muted)] text-[11px] mt-0.5">
+                {qnaUsedToday !== null
+                  ? `${qnaUsedToday} of ${ents.qa.limitPerDay} questions used today · resets at midnight CT`
+                  : `${ents.qa.limitPerDay} questions/day · resets at midnight CT`}
+              </p>
+            )}
+          </div>
+          {ents.qa.limitPerDay === 0 ? (
+            <a
+              href="/pricing"
+              className="text-[var(--np-accent-text)] text-[12px] hover:text-[var(--np-accent-hover)] transition-colors"
+            >
+              View plans →
+            </a>
+          ) : (
+            <a
+              href="/chat"
+              className="text-[var(--np-accent-text)] text-[13px] hover:text-[var(--np-accent-hover)] transition-colors"
+            >
+              Open Q&A →
+            </a>
+          )}
         </div>
       </SettingsCard>
 
@@ -186,7 +234,45 @@ export default async function SettingsPage({
         </div>
 
         <div className="flex items-center justify-between py-2">
-          {sub?.status === "active" ? (
+          {sub?.status === "trialing" ? (
+            <>
+              <div>
+                <p className="text-[var(--np-text-body)] text-[13px] font-medium">
+                  {sub.tier
+                    ? `${sub.tier.charAt(0).toUpperCase()}${sub.tier.slice(1)} plan · Trial`
+                    : "Trial"}
+                </p>
+                {sub.currentPeriodEnd && (
+                  <p className="text-[var(--np-text-muted)] text-[12px] mt-0.5">
+                    {Math.max(0, Math.ceil((sub.currentPeriodEnd.getTime() - Date.now()) / 86_400_000))} days remaining
+                    · trial ends {formatPeriodEnd(sub.currentPeriodEnd)}
+                  </p>
+                )}
+              </div>
+              <div className="flex items-center gap-3">
+                <a
+                  href="/pricing"
+                  className="text-[var(--np-accent-text)] text-[13px] hover:underline transition-colors"
+                >
+                  Upgrade plan →
+                </a>
+                <form action={createPortalSession}>
+                  <button
+                    type="submit"
+                    className="
+                      min-h-11 px-4 rounded-[var(--np-radius-md)]
+                      border border-[var(--np-border)]
+                      text-[var(--np-text-body)] text-[13px]
+                      hover:border-[var(--np-border-strong)] hover:text-[var(--np-text-strong)]
+                      transition-colors cursor-pointer
+                    "
+                  >
+                    Manage billing
+                  </button>
+                </form>
+              </div>
+            </>
+          ) : sub?.status === "active" ? (
             <>
               <div>
                 <p className="text-[var(--np-text-body)] text-[13px] font-medium">
@@ -200,20 +286,28 @@ export default async function SettingsPage({
                   </p>
                 )}
               </div>
-              <form action={createPortalSession}>
-                <button
-                  type="submit"
-                  className="
-                    min-h-11 px-4 rounded-[var(--np-radius-md)]
-                    border border-[var(--np-border)]
-                    text-[var(--np-text-body)] text-[13px]
-                    hover:border-[var(--np-border-strong)] hover:text-[var(--np-text-strong)]
-                    transition-colors cursor-pointer
-                  "
+              <div className="flex items-center gap-3">
+                <a
+                  href="/pricing"
+                  className="text-[var(--np-accent-text)] text-[13px] hover:underline transition-colors"
                 >
-                  Manage billing
-                </button>
-              </form>
+                  Upgrade plan →
+                </a>
+                <form action={createPortalSession}>
+                  <button
+                    type="submit"
+                    className="
+                      min-h-11 px-4 rounded-[var(--np-radius-md)]
+                      border border-[var(--np-border)]
+                      text-[var(--np-text-body)] text-[13px]
+                      hover:border-[var(--np-border-strong)] hover:text-[var(--np-text-strong)]
+                      transition-colors cursor-pointer
+                    "
+                  >
+                    Manage billing
+                  </button>
+                </form>
+              </div>
             </>
           ) : sub?.status === "past_due" ? (
             <>

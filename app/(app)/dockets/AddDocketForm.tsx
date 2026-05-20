@@ -6,6 +6,7 @@ import { trackDocket } from "./actions"
 export function AddDocketForm() {
   const [isPending, startTransition] = useTransition()
   const [message, setMessage] = useState<string | null>(null)
+  const [isGateError, setIsGateError] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   function handleSubmit(e: React.FormEvent) {
@@ -13,6 +14,7 @@ export function AddDocketForm() {
     const val = inputRef.current?.value.trim() ?? ""
     if (!val) return
     setMessage(null)
+    setIsGateError(false)
     startTransition(async () => {
       const result = await trackDocket({ docketNumber: val })
       if (result.ok) {
@@ -23,6 +25,8 @@ export function AddDocketForm() {
             : "Docket added."
         )
       } else {
+        const gate = result.error.toLowerCase().includes("upgrade") || result.error.toLowerCase().includes("limit")
+        setIsGateError(gate)
         setMessage(result.error)
       }
     })
@@ -64,7 +68,17 @@ export function AddDocketForm() {
         {isPending ? "Adding…" : "Track docket"}
       </button>
       {message && (
-        <p className="w-full text-[var(--np-text-muted)] text-[12px]">{message}</p>
+        <p className="w-full text-[12px] text-[var(--np-text-muted)]">
+          {message}
+          {isGateError && (
+            <>
+              {" "}
+              <a href="/pricing" className="text-[var(--np-accent-text)] hover:underline">
+                Upgrade →
+              </a>
+            </>
+          )}
+        </p>
       )}
     </form>
   )

@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation"
 import { headers } from "next/headers"
 import Link from "next/link"
-import { LayoutDashboard, Archive, BookOpen, Settings } from "lucide-react"
+import { LayoutDashboard, Archive, BookOpen, MessageSquare, Settings } from "lucide-react"
 import { auth } from "@/lib/auth"
 import { db } from "@/db/client"
 import { userProfiles } from "@/db/schema"
@@ -13,11 +13,17 @@ const NAV_ITEMS = [
   { href: "/dashboard", label: "Today's Brief", icon: LayoutDashboard },
   { href: "/briefs", label: "Brief History", icon: Archive },
   { href: "/dockets", label: "Dockets", icon: BookOpen },
+  { href: "/chat", label: "Q&A", icon: MessageSquare },
   { href: "/settings", label: "Settings", icon: Settings },
 ]
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const session = await auth.api.getSession({ headers: await headers() })
+  let session = null
+  try {
+    session = await auth.api.getSession({ headers: await headers() })
+  } catch {
+    // malformed/expired session cookie — treat as logged out
+  }
 
   if (!session) {
     redirect("/login")

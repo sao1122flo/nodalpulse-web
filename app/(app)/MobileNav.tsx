@@ -2,13 +2,14 @@
 
 import { useState, useEffect, useRef } from "react"
 import Link from "next/link"
-import { LayoutDashboard, Archive, BookOpen, Settings, Menu, X } from "lucide-react"
+import { LayoutDashboard, Archive, BookOpen, MessageSquare, Settings, Menu, X } from "lucide-react"
 import { SignOutButton } from "./sign-out-button"
 
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Today's Brief", icon: LayoutDashboard },
   { href: "/briefs", label: "Brief History", icon: Archive },
   { href: "/dockets", label: "Dockets", icon: BookOpen },
+  { href: "/chat", label: "Q&A", icon: MessageSquare },
   { href: "/settings", label: "Settings", icon: Settings },
 ]
 

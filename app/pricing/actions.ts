@@ -18,7 +18,7 @@ const PRICE_ENV: Record<Tier, string> = {
   org:     "STRIPE_PRICE_ORG",
 }
 
-export async function createTieredCheckoutSession(tier: Tier) {
+export async function createTieredCheckoutSession(tier: Tier, returnPath?: string) {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session) throw new Error("Unauthenticated")
 
@@ -28,6 +28,13 @@ export async function createTieredCheckoutSession(tier: Tier) {
 
   const priceId = process.env[PRICE_ENV[tier]]
   if (!priceId) throw new Error(`${PRICE_ENV[tier]} is not configured`)
+
+  // Whitelist: must be a relative path. Reject anything containing '//' to block
+  // open-redirect via protocol-relative URLs (e.g. //evil.com).
+  const safeReturn =
+    returnPath && returnPath.startsWith("/") && !returnPath.includes("//")
+      ? returnPath
+      : "/dashboard"
 
   const [sub] = await db
     .select({ stripeCustomerId: subscriptions.stripeCustomerId })
@@ -42,7 +49,8 @@ export async function createTieredCheckoutSession(tier: Tier) {
       : { customer_email: session.user.email }),
     client_reference_id: session.user.id,
     line_items: [{ price: priceId, quantity: 1 }],
-    success_url: `${appUrl()}/pricing?checkout=success&tier=${tier}`,
+    subscription_data: { trial_period_days: 14 },
+    success_url: `${appUrl()}/pricing?checkout=success&tier=${tier}&return=${encodeURIComponent(safeReturn)}`,
     cancel_url:  `${appUrl()}/pricing?tier=${tier}`,
   })
 

@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import { redirect } from "next/navigation"
 import { headers } from "next/headers"
 import { auth } from "@/lib/auth"
 import { getEntitlements } from "@/lib/entitlements"
@@ -21,18 +22,33 @@ const COLS = ["free", "starter", "pro", "team", "org"] as const
 export default async function PricingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tier?: string; checkout?: string }>
+  searchParams: Promise<{ tier?: string; checkout?: string; return?: string }>
 }) {
   const session = await auth.api.getSession({ headers: await headers() })
   const params = await searchParams
   const preselected = (params.tier ?? null) as Tier | null
   const checkoutDone = params.checkout === "success"
 
+  // Redirect to return path on successful checkout, if one was preserved.
+  if (checkoutDone && params.return) {
+    const raw = params.return
+    // Re-validate at read time: relative path only, no protocol-relative URLs.
+    if (raw.startsWith("/") && !raw.includes("//")) {
+      redirect(raw)
+    }
+  }
+
   const entitlements = session
     ? await getEntitlements(session.user.id)
     : null
 
   const currentTier = entitlements?.tier ?? null
+
+  // Preserve the return path for checkout links — whitelist same as actions.ts.
+  const returnPath =
+    params.return && params.return.startsWith("/") && !params.return.includes("//")
+      ? params.return
+      : undefined
 
   return (
     <div className="min-h-screen bg-[var(--np-surface)]">
@@ -49,7 +65,7 @@ export default async function PricingPage({
             Simple, transparent pricing
           </h1>
           <p className="text-[var(--np-text-muted)] text-[15px]">
-            All paid plans include a 14-day free trial. No credit card required to start.
+            Card required, no charge for 14 days.
           </p>
           {checkoutDone && (
             <div
@@ -83,7 +99,7 @@ export default async function PricingPage({
                 <span
                   className="
                     w-full text-center py-2 px-3 rounded-[var(--np-radius-md)]
-                    border border-[var(--np-border)] text-[var(--np-text-muted)]
+                    border border-[var(--np-border)] text-[var(--np-text-body)]
                     text-[13px] font-medium
                   "
                 >
@@ -148,7 +164,7 @@ export default async function PricingPage({
                   className={`
                     text-[13px] font-semibold tracking-wide mt-1
                     ${isHighlighted
-                      ? "text-[var(--np-indigo-700)]"
+                      ? "text-[#312e81]"
                       : "text-[var(--np-text-strong)]"
                     }
                   `}
@@ -160,7 +176,7 @@ export default async function PricingPage({
                   <span className="text-[22px] font-semibold text-[var(--np-text-primary)] tabular-nums">
                     {td.price}
                   </span>
-                  <span className="text-[13px] text-[var(--np-text-muted)]">{td.period}</span>
+                  <span className={`text-[13px] ${isHighlighted ? "text-[var(--np-text-body)]" : "text-[var(--np-text-muted)]"}`}>{td.period}</span>
                 </div>
 
                 <TierCTA
@@ -169,6 +185,7 @@ export default async function PricingPage({
                   currentTier={currentTier}
                   isLoggedIn={!!session}
                   isPreselected={preselected === td.tier}
+                  returnPath={returnPath}
                 />
               </div>
             )
@@ -200,7 +217,7 @@ export default async function PricingPage({
                       text-center px-4 py-3 font-semibold text-[13px]
                       border-l border-[var(--np-border)]
                       ${col === "pro" || preselected === col
-                        ? "bg-[var(--np-indigo-50)] text-[var(--np-indigo-700)]"
+                        ? "bg-[var(--np-indigo-50)] text-[#312e81]"
                         : "text-[var(--np-text-strong)]"
                       }
                     `}
@@ -227,7 +244,9 @@ export default async function PricingPage({
                         className={`
                           text-center px-4 py-3
                           border-l border-[var(--np-border)]
-                          ${val === "—" ? "text-[var(--np-text-muted)]" : "text-[var(--np-text-primary)]"}
+                          ${val === "—"
+                            ? (col === "pro" || preselected === col ? "text-[var(--np-text-body)]" : "text-[var(--np-text-muted)]")
+                            : "text-[var(--np-text-primary)]"}
                           ${col === "pro" || preselected === col
                             ? "bg-[color-mix(in_srgb,var(--np-indigo-50)_40%,transparent)]"
                             : ""
@@ -260,7 +279,7 @@ export default async function PricingPage({
               Start your 14-day free trial &rarr;
             </a>
             <p className="mt-2 text-[var(--np-text-muted)] text-[12px]">
-              No credit card required.
+              Card required, no charge for 14 days.
             </p>
           </div>
         )}
@@ -278,12 +297,14 @@ function TierCTA({
   currentTier,
   isLoggedIn,
   isPreselected,
+  returnPath,
 }: {
   tier: Tier
   contactOnly: boolean
   currentTier: Tier | null
   isLoggedIn: boolean
   isPreselected: boolean
+  returnPath?: string
 }) {
   const baseBtn = `
     w-full text-center py-2 px-3 text-[13px] font-medium
@@ -304,7 +325,7 @@ function TierCTA({
   if (currentTier === tier) {
     return (
       <span
-        className={`${baseBtn} border border-[var(--np-accent)] text-[var(--np-accent-text)] opacity-60 cursor-default`}
+        className={`${baseBtn} border border-[var(--np-border)] text-[var(--np-text-body)] cursor-default`}
       >
         Current plan
       </span>
@@ -327,7 +348,7 @@ function TierCTA({
 
   if (isLoggedIn) {
     // No active subscription — direct checkout
-    const action = createTieredCheckoutSession.bind(null, tier)
+    const action = createTieredCheckoutSession.bind(null, tier, returnPath)
     return (
       <form action={action}>
         <button
@@ -346,8 +367,11 @@ function TierCTA({
     )
   }
 
-  // Logged out — link to login with tier preserved in callbackURL
-  const callbackURL = encodeURIComponent(`/pricing?tier=${tier}`)
+  // Logged out — link to login with tier + return preserved in callbackURL
+  const pricingParams = returnPath
+    ? `/pricing?tier=${tier}&return=${encodeURIComponent(returnPath)}`
+    : `/pricing?tier=${tier}`
+  const callbackURL = encodeURIComponent(pricingParams)
   return (
     <a
       href={`/login?callbackURL=${callbackURL}`}

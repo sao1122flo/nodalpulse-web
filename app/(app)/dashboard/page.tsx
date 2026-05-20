@@ -7,11 +7,15 @@ import { db } from "@/db/client"
 import { briefs } from "@/db/schema"
 import { eq, and, desc } from "drizzle-orm"
 import { getObject } from "@/lib/r2"
+import { getEntitlements } from "@/lib/entitlements"
 import { BRIEF_DELIVERY_COPY } from "@/lib/copy"
 import { SAMPLE_BRIEF_HTML } from "@/lib/sample-brief"
 import BriefFrame from "./BriefFrame"
 import { ReloadButton } from "./ReloadButton"
 import { RequestBriefButton } from "./RequestBriefButton"
+import { SavedSearchesRail } from "./SavedSearchesRail"
+import { listSavedSearches } from "@/app/(app)/saved-searches/actions"
+import { TrialBanner } from "@/app/(app)/components/TrialBanner"
 
 export const metadata: Metadata = { title: "Dashboard" }
 
@@ -43,26 +47,32 @@ export default async function DashboardPage() {
 
   const todayIso = new Date().toISOString().slice(0, 10)
 
-  const [brief] = await db
-    .select({
-      id: briefs.id,
-      date: briefs.date,
-      model: briefs.model,
-      promptVer: briefs.promptVer,
-      htmlR2Key: briefs.htmlR2Key,
-      citationCount: briefs.citationCount,
-      sendStatus: briefs.sendStatus,
-      sentAt: briefs.sentAt,
-    })
-    .from(briefs)
-    .where(
-      and(
-        eq(briefs.userId, session.user.id),
-        eq(briefs.sendStatus, "sent"),
-      ),
-    )
-    .orderBy(desc(briefs.date))
-    .limit(1)
+  const [[brief], ents, savedSearches] = await Promise.all([
+    db
+      .select({
+        id: briefs.id,
+        date: briefs.date,
+        model: briefs.model,
+        promptVer: briefs.promptVer,
+        htmlR2Key: briefs.htmlR2Key,
+        citationCount: briefs.citationCount,
+        sendStatus: briefs.sendStatus,
+        sentAt: briefs.sentAt,
+      })
+      .from(briefs)
+      .where(
+        and(
+          eq(briefs.userId, session.user.id),
+          eq(briefs.sendStatus, "sent"),
+        ),
+      )
+      .orderBy(desc(briefs.date))
+      .limit(1),
+    getEntitlements(session.user.id),
+    listSavedSearches(),
+  ])
+
+  const isPaidUser = (ents.savedSearches.limit ?? 1) > 0
 
   let briefHtml: string | null = null
   if (brief?.htmlR2Key) {
@@ -74,7 +84,10 @@ export default async function DashboardPage() {
   }
 
   return (
-    <div className="px-8 py-8 max-w-3xl">
+    <div className="px-8 py-8 max-w-[1080px] grid grid-cols-1 lg:grid-cols-[1fr_288px] gap-8 items-start">
+      {/* Main brief column */}
+      <div>
+      <TrialBanner />
       {/* Page header */}
       <div className="mb-6">
         <h1 className="text-[var(--np-text-primary)] text-xl font-semibold tracking-tight">
@@ -185,6 +198,10 @@ export default async function DashboardPage() {
           View brief history &rarr;
         </Link>
       </div>
+      </div>{/* end main column */}
+
+      {/* Right rail */}
+      <SavedSearchesRail savedSearches={savedSearches} isPaidUser={isPaidUser} />
     </div>
   )
 }

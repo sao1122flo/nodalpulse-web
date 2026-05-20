@@ -368,9 +368,23 @@ export function OnboardingClient({ initialStep, initialState }: Props) {
               </form>
 
               {docketMsg && (
-                <p className={`text-[12px] mb-2 ${docketMsg.ok ? "text-[var(--np-text-muted)]" : "text-[var(--np-danger)]"}`}>
-                  {docketMsg.text}
-                </p>
+                docketMsg.ok ? (
+                  <p className="text-[12px] mb-2 text-[var(--np-text-muted)]">
+                    {docketMsg.text}
+                  </p>
+                ) : (
+                  <div className="mb-2">
+                    <p className="text-[12px] text-[var(--np-danger)]">{docketMsg.text}</p>
+                    {docketMsg.text.toLowerCase().includes("limit") && (
+                      <a
+                        href="/pricing?return=%2Fonboarding"
+                        className="inline-flex items-center h-7 px-3 mt-1.5 rounded-[var(--np-radius-md)] border border-[var(--np-accent)] text-[var(--np-accent-text)] text-[12px] font-medium hover:bg-[var(--np-accent)] hover:text-white transition-colors"
+                      >
+                        Upgrade to track dockets →
+                      </a>
+                    )}
+                  </div>
+                )
               )}
 
               <LimitBar used={trackedCount} limit={initialState.trackedDocketLimit} noun="dockets" />
@@ -406,7 +420,7 @@ export function OnboardingClient({ initialStep, initialState }: Props) {
                     Saved searches are available on paid plans.
                   </p>
                   <a
-                    href="/pricing"
+                    href="/pricing?return=%2Fonboarding"
                     className="inline-flex items-center h-8 px-4 rounded-[var(--np-radius-md)] bg-[var(--np-accent)] text-[var(--np-accent-fg)] text-[13px] font-medium hover:bg-[var(--np-accent-hover)] transition-colors"
                   >
                     View plans →

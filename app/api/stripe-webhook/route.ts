@@ -28,7 +28,49 @@ export async function POST(req: NextRequest) {
 
   switch (event.type) {
     case "customer.subscription.created": {
-      // Covered by checkout.session.completed for Hosted Checkout flows.
+      // Fires immediately when a trial is started via Hosted Checkout,
+      // before checkout.session.completed — handle trialing state here.
+      const stripeSub = event.data.object
+      const status = stripeSub.status
+      if (status !== "trialing") break  // active handled by checkout.session.completed
+
+      const stripeSubscriptionId = stripeSub.id
+      const stripeCustomerId =
+        typeof stripeSub.customer === "string" ? stripeSub.customer : null
+      const priceId = stripeSub.items.data[0]?.price?.id
+      const tier = priceId ? resolveTier(priceId) : null
+
+      // Retrieve client_reference_id from the subscription metadata or skip;
+      // checkout.session.completed carries it but subscription.created does not.
+      // We use customer_email match as a fallback to find the user.
+      const customerEmail =
+        typeof stripeSub.customer === "string"
+          ? (await stripe.customers.retrieve(stripeSub.customer) as { email?: string }).email ?? null
+          : null
+
+      if (!customerEmail || !priceId || !tier) break
+
+      const rawTrialEnd = (stripeSub as unknown as { trial_end?: number }).trial_end
+      // For trialing subs trial_end is the canonical expiry; current_period_end is not needed here.
+      const expiresAt = rawTrialEnd ? new Date(rawTrialEnd * 1000) : null
+
+      const [userRow] = await db
+        .select({ id: subscriptions.userId })
+        .from(subscriptions)
+        .where(eq(subscriptions.stripeSubscriptionId, stripeSubscriptionId))
+
+      // If a row already exists (written by checkout.session.completed), update it.
+      if (userRow) {
+        await db
+          .update(subscriptions)
+          .set({ status, tier, currentPeriodEnd: expiresAt })
+          .where(eq(subscriptions.stripeSubscriptionId, stripeSubscriptionId))
+        await applyTierEntitlements(userRow.id, priceId, expiresAt)
+        break
+      }
+
+      // No row yet — look up user by customer ID in subscriptions, or skip.
+      // checkout.session.completed will create the row with accurate userId.
       break
     }
 
@@ -72,19 +114,20 @@ export async function POST(req: NextRequest) {
         break
       }
 
-      const rawEnd = (stripeSub as unknown as { current_period_end?: number })
-        .current_period_end
-      const invEnd =
-        typeof stripeSub.latest_invoice === "object" &&
-        stripeSub.latest_invoice !== null &&
-        "period_end" in stripeSub.latest_invoice
-          ? (stripeSub.latest_invoice as { period_end: number }).period_end
-          : null
-      const expiresAt = rawEnd
-        ? new Date(rawEnd * 1000)
-        : invEnd
-          ? new Date(invEnd * 1000)
-          : null
+      const subStatus = stripeSub.status  // "trialing" or "active"
+      const rawTrialEnd = (stripeSub as unknown as { trial_end?: number }).trial_end
+      // current_period_end moved to SubscriptionItem in Stripe API 2024-09-30+
+      const rawEnd: number | undefined =
+        (stripeSub.items.data[0] as unknown as { current_period_end?: number }).current_period_end
+
+      // For trialing subs, expiresAt = trial_end (when entitlements should stop
+      // if the user never converts). For active subs, use current_period_end.
+      const expiresAt =
+        subStatus === "trialing" && rawTrialEnd
+          ? new Date(rawTrialEnd * 1000)
+          : rawEnd
+            ? new Date(rawEnd * 1000)
+            : null
 
       await db
         .insert(subscriptions)
@@ -92,13 +135,13 @@ export async function POST(req: NextRequest) {
           userId,
           stripeCustomerId,
           stripeSubscriptionId,
-          status: "active",
+          status: subStatus,
           tier,
           currentPeriodEnd: expiresAt,
         })
         .onConflictDoUpdate({
           target: subscriptions.userId,
-          set: { stripeCustomerId, stripeSubscriptionId, status: "active", tier, currentPeriodEnd: expiresAt },
+          set: { stripeCustomerId, stripeSubscriptionId, status: subStatus, tier, currentPeriodEnd: expiresAt },
         })
 
       await applyTierEntitlements(userId, priceId, expiresAt)
@@ -112,9 +155,19 @@ export async function POST(req: NextRequest) {
       const priceId = stripeSub.items.data[0]?.price?.id
       const tier = priceId ? resolveTier(priceId) : null
 
-      const rawEnd = (stripeSub as unknown as { current_period_end?: number })
-        .current_period_end
-      const currentPeriodEnd = rawEnd ? new Date(rawEnd * 1000) : null
+      const rawTrialEnd = (stripeSub as unknown as { trial_end?: number }).trial_end
+      // current_period_end moved to SubscriptionItem in Stripe API 2024-09-30+
+      const rawEnd: number | undefined =
+        (stripeSub.items.data[0] as unknown as { current_period_end?: number }).current_period_end
+
+      // Mirror the same expiresAt logic as checkout.session.completed:
+      // trialing → trial_end; active/past_due → current_period_end.
+      const currentPeriodEnd =
+        status === "trialing" && rawTrialEnd
+          ? new Date(rawTrialEnd * 1000)
+          : rawEnd
+            ? new Date(rawEnd * 1000)
+            : null
 
       const [row] = await db
         .select({ userId: subscriptions.userId })
@@ -129,7 +182,7 @@ export async function POST(req: NextRequest) {
         .where(eq(subscriptions.stripeSubscriptionId, stripeSubscriptionId))
 
       // Re-apply entitlements on every update — handles upgrades, downgrades,
-      // renewals, and cancel-at-period-end (same tier, same expiresAt, idempotent).
+      // renewals, trial→active, and cancel-at-period-end. Idempotent.
       if (priceId) {
         await applyTierEntitlements(row.userId, priceId, currentPeriodEnd)
       }
