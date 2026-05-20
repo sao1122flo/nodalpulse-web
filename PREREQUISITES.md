@@ -23,9 +23,41 @@ One-time setup required before the app can run in production. Local dev only nee
 
 ## 3. Brevo (transactional email)
 
+### 3a. Basic setup
+
 - Create a Brevo account and generate an API key.
 - Verify the sender domain (`nodalpulse.com`) via DNS records.
 - Set `BREVO_API_KEY`, `BREVO_FROM_EMAIL`, and `BREVO_FROM_NAME` in Railway.
+
+### 3b. Deliverability DNS records
+
+Add the following DNS records to `nodalpulse.com` in Cloudflare (or wherever the domain is managed):
+
+**SPF** — permits Brevo to send on behalf of the domain:
+```
+TXT  @  "v=spf1 include:sendinblue.com ~all"
+```
+If another sender already exists (e.g. Google Workspace), merge it into a single SPF record — multiple `TXT v=spf1` records cause SPF to fail.
+
+**DKIM** — Brevo generates the record. Copy it from Brevo → Senders & Domains → Domain authentication. It looks like:
+```
+TXT  mail._domainkey.nodalpulse.com  "v=DKIM1; k=rsa; p=<key>"
+```
+
+**DMARC** — start at `p=none` (monitoring only). Add:
+```
+TXT  _dmarc.nodalpulse.com  "v=DMARC1; p=none; rua=mailto:dmarc@nodalpulse.com; pct=100; adkim=r; aspf=r"
+```
+
+### 3c. DMARC enforcement schedule
+
+| Date | Action |
+|---|---|
+| Initial deploy | Set `p=none` — monitor RUA reports for failures |
+| **2026-06-19** (30 days after initial) | If no legitimate failures in reports: change `p=none` → `p=quarantine` |
+| 2026-07-19 | If still clean: change `p=quarantine` → `p=reject` |
+
+Check the RUA inbox (`dmarc@nodalpulse.com`) **monthly**. Do not advance the policy if any report shows DMARC failures from legitimate sends. DMARC aggregate reports arrive as XML emails — use [dmarcian.com/dmarc-xml-to-human-readable](https://dmarcian.com/dmarc-xml-to-human-readable) to parse them.
 
 ---
 

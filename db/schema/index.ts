@@ -15,14 +15,15 @@ import {
 
 // Matches the JSONB payload written by services' extraction worker (schema_ver "1.0").
 export interface ExtractionPayload {
-  docket_number?:  string | null
-  summary?:        string | null
-  parties?:        string[]
-  deadlines?:      { description: string; date: string | null }[]
-  effective_date?: string | null
-  key_points?:     string[]
+  docket_number?:    string | null
+  summary?:          string | null
+  parties?:          string[]
+  deadlines?:        { description: string; date: string | null }[]
+  effective_date?:   string | null
+  key_points?:       string[]
   relief_requested?: string | null
-  outcome?:        string | null
+  outcome?:          string | null
+  role_tags?:        string[]
 }
 
 // ---------------------------------------------------------------------------
@@ -233,6 +234,45 @@ export const userDockets = pgTable("user_dockets", {
 })
 
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// team_memberships
+// ---------------------------------------------------------------------------
+export const teamMemberships = pgTable(
+  "team_memberships",
+  {
+    id:            uuid("id").defaultRandom().primaryKey(),
+    ownerId:       uuid("owner_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    inviteeEmail:  text("invitee_email").notNull(),
+    inviteeUserId: uuid("invitee_user_id").references(() => users.id, { onDelete: "set null" }),
+    role:          text("role").notNull().default("member"),
+    // status: pending | accepted | revoked
+    status:        text("status").notNull().default("pending"),
+    invitedAt:     timestamp("invited_at", { withTimezone: true }).defaultNow().notNull(),
+    acceptedAt:    timestamp("accepted_at", { withTimezone: true }),
+  },
+  (t) => [
+    unique("team_memberships_owner_email_unique").on(t.ownerId, t.inviteeEmail),
+    index("idx_team_memberships_owner").on(t.ownerId),
+    index("idx_team_memberships_invitee_email").on(t.inviteeEmail),
+  ],
+)
+
+// ---------------------------------------------------------------------------
+// api_keys
+// Format: np_<8-char-prefix>_<32-char-random-suffix>
+// The prefix is stored plaintext for O(1) lookup; the full key is hashed.
+// ---------------------------------------------------------------------------
+export const apiKeys = pgTable("api_keys", {
+  id:         uuid("id").defaultRandom().primaryKey(),
+  userId:     uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  label:      text("label").notNull(),
+  keyPrefix:  text("key_prefix").notNull(),
+  keyHash:    text("key_hash").notNull(),
+  createdAt:  timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+  revokedAt:  timestamp("revoked_at", { withTimezone: true }),
+})
+
 // READ-ONLY from nodalpulse-web.
 // Owner: nodalpulse-services. Do not write to these tables from the web app
 // except where explicitly noted (dockets above is a shared-write exception).

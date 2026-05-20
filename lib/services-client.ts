@@ -206,3 +206,17 @@ export function getQnaUsage(
 ): Promise<Result<QnaUsageResult, ServicesError>> {
   return get("/qna/usage", { user_id: userId })
 }
+
+// ── Brief history export ───────────────────────────────────────────────────────
+
+export interface BriefHistoryExportResult {
+  queued: boolean
+  job_id: string
+}
+
+export function requestBriefHistoryExport(params: {
+  user_id: string
+  user_email: string
+}): Promise<Result<BriefHistoryExportResult, ServicesError>> {
+  return post("/brief-history/export", params)
+}

@@ -54,7 +54,20 @@ export const auth = betterAuth({
   plugins: [
     magicLink({
       sendMagicLink: async ({ email, url }) => {
-        await sendMagicLink({ to: email, url })
+        // Extract the token from BA's verify URL and send a /magic-link-confirm
+        // landing page instead. Pre-fetchers (M365 Safe Links, spam scanners) send
+        // GET requests to URLs in emails — if the verify URL lands in the email
+        // directly, the scanner consumes the single-use token before the user clicks.
+        // The confirm page requires a button click (POST) to consume the token.
+        const verifyUrl = new URL(url)
+        const token = verifyUrl.searchParams.get("token") ?? ""
+        const callbackURL = verifyUrl.searchParams.get("callbackURL") ?? "/dashboard"
+        const appOrigin = process.env.NEXT_PUBLIC_APP_URL ?? "https://app.nodalpulse.com"
+        const confirmUrl =
+          `${appOrigin}/magic-link-confirm` +
+          `?token=${encodeURIComponent(token)}` +
+          `&callbackURL=${encodeURIComponent(callbackURL)}`
+        await sendMagicLink({ to: email, url: confirmUrl })
       },
     }),
   ],

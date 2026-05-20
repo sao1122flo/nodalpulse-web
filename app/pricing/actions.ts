@@ -37,10 +37,23 @@ export async function createTieredCheckoutSession(tier: Tier, returnPath?: strin
       : "/dashboard"
 
   const [sub] = await db
-    .select({ stripeCustomerId: subscriptions.stripeCustomerId })
+    .select({
+      stripeCustomerId:     subscriptions.stripeCustomerId,
+      stripeSubscriptionId: subscriptions.stripeSubscriptionId,
+    })
     .from(subscriptions)
     .where(eq(subscriptions.userId, session.user.id))
     .limit(1)
+
+  // Guard: existing subscriber goes to portal to manage their plan rather than
+  // creating a duplicate subscription or receiving a second 14-day trial.
+  if (sub?.stripeSubscriptionId) {
+    const portalSession = await stripe.billingPortal.sessions.create({
+      customer:   sub.stripeCustomerId!,
+      return_url: `${appUrl()}/pricing`,
+    })
+    redirect(portalSession.url)
+  }
 
   const checkoutSession = await stripe.checkout.sessions.create({
     mode: "subscription",
@@ -55,4 +68,24 @@ export async function createTieredCheckoutSession(tier: Tier, returnPath?: strin
   })
 
   redirect(checkoutSession.url!)
+}
+
+export async function createPortalSessionFromPricing() {
+  const session = await auth.api.getSession({ headers: await headers() })
+  if (!session) throw new Error("Unauthenticated")
+
+  const [sub] = await db
+    .select({ stripeCustomerId: subscriptions.stripeCustomerId })
+    .from(subscriptions)
+    .where(eq(subscriptions.userId, session.user.id))
+    .limit(1)
+
+  if (!sub?.stripeCustomerId) throw new Error("No Stripe customer found")
+
+  const portalSession = await stripe.billingPortal.sessions.create({
+    customer:   sub.stripeCustomerId,
+    return_url: `${appUrl()}/pricing`,
+  })
+
+  redirect(portalSession.url)
 }

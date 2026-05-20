@@ -38,20 +38,30 @@ export async function sendQuestion(
   })
 
   if (!result.ok) {
+    const e = result.error
+    let error: string
+    if (e.kind === "network") {
+      error = "Could not reach the Q&A service. Please try again."
+    } else if (e.kind === "unexpected" && e.status === 429) {
+      error = "__rate_limit__"
+    } else if (e.kind === "unexpected" && e.status === 422) {
+      error = "__no_predicates__"
+    } else if (e.kind === "unexpected" && e.status === 403) {
+      error = "__unavailable__"
+    } else if (process.env.NODE_ENV === "development") {
+      error = e.kind === "unexpected"
+        ? `Services ${e.status}: ${e.body?.slice(0, 300)}`
+        : `Services error: ${e.kind}`
+    } else {
+      error = "Q&A failed. Please try again."
+    }
+
     return {
       ok: false,
-      error: result.error.kind === "network"
-        ? "Could not reach the Q&A service. Please try again."
-        : result.error.kind === "unexpected" && result.error.status === 429
-          ? "__rate_limit__"
-          : result.error.kind === "unexpected" && result.error.status === 422
-            ? "__no_predicates__"
-            : result.error.kind === "unexpected" && result.error.status === 403
-              ? "__unavailable__"
-              : "Q&A failed. Please try again.",
-      errorCode: result.error.kind === "unexpected" ? String(result.error.status) : result.error.kind,
-      errorPayload: result.error.kind === "unexpected" ? (() => {
-        try { return JSON.parse(result.error.body ?? "{}") } catch { return {} }
+      error,
+      errorCode: e.kind === "unexpected" ? String(e.status) : e.kind,
+      errorPayload: e.kind === "unexpected" ? (() => {
+        try { return JSON.parse(e.body ?? "{}") } catch { return { raw: e.body } }
       })() : undefined,
     }
   }

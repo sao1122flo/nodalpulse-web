@@ -8,7 +8,7 @@ import {
   FEATURE_MATRIX,
   type Tier,
 } from "@/lib/tiers"
-import { createTieredCheckoutSession } from "./actions"
+import { createTieredCheckoutSession, createPortalSessionFromPricing } from "./actions"
 
 export const metadata: Metadata = {
   title: "Pricing — NodalPulse",
@@ -81,10 +81,10 @@ export default async function PricingPage({
         </div>
 
         {/* Tier cards */}
-        <div className="grid grid-cols-5 gap-px bg-[var(--np-border)] border border-[var(--np-border)] rounded-[var(--np-radius-lg)] overflow-hidden mb-10">
+        <div className="flex flex-col gap-3 mb-10 lg:grid lg:grid-cols-5 lg:gap-px lg:bg-[var(--np-border)] lg:border lg:border-[var(--np-border)] lg:rounded-[var(--np-radius-lg)] lg:overflow-hidden">
 
           {/* Free column */}
-          <div className="bg-[var(--np-surface)] px-5 py-6 flex flex-col gap-3">
+          <div className="bg-[var(--np-surface)] px-5 py-6 flex flex-col gap-3 border border-[var(--np-border)] rounded-[var(--np-radius-lg)] lg:border-0 lg:rounded-none">
             <div className="text-[13px] font-semibold text-[var(--np-text-strong)] tracking-wide mt-1">
               Free
             </div>
@@ -139,10 +139,12 @@ export default async function PricingPage({
               <div
                 key={td.tier}
                 className={`
-                  relative px-5 py-6 flex flex-col gap-3
+                  relative px-5 flex flex-col gap-3
+                  border border-[var(--np-border)] rounded-[var(--np-radius-lg)]
+                  lg:border-0 lg:rounded-none
                   ${isHighlighted
-                    ? "bg-[var(--np-indigo-50)]"
-                    : "bg-[var(--np-surface)]"
+                    ? "pt-10 pb-6 lg:py-6 bg-[var(--np-indigo-50)]"
+                    : "py-6 bg-[var(--np-surface)]"
                   }
                 `}
               >
@@ -172,10 +174,10 @@ export default async function PricingPage({
                 </div>
 
                 <div className="flex items-baseline gap-0.5">
-                  <span className="text-[22px] font-semibold text-[var(--np-text-primary)] tabular-nums">
+                  <span className={`text-[22px] font-semibold tabular-nums ${isHighlighted ? "text-[#1e1b4b]" : "text-[var(--np-text-primary)]"}`}>
                     {td.price}
                   </span>
-                  <span className={`text-[13px] ${isHighlighted ? "text-[var(--np-text-body)]" : "text-[var(--np-text-muted)]"}`}>{td.period}</span>
+                  <span className={`text-[13px] ${isHighlighted ? "text-[#312e81]" : "text-[var(--np-text-muted)]"}`}>{td.period}</span>
                 </div>
 
                 <TierCTA
@@ -184,6 +186,7 @@ export default async function PricingPage({
                   currentTier={currentTier}
                   isLoggedIn={!!session}
                   isPreselected={preselected === td.tier}
+                  isHighlighted={isHighlighted}
                   returnPath={returnPath}
                 />
               </div>
@@ -198,13 +201,14 @@ export default async function PricingPage({
             overflow-x-auto mb-16
           "
         >
-          <table className="w-full border-collapse text-[13px]">
+          <table className="w-full min-w-[600px] border-collapse text-[13px]">
             <thead>
               <tr className="border-b border-[var(--np-border-strong)] bg-[var(--np-surface-elevated)]">
                 <th
                   className="
                     text-left px-5 py-3 font-semibold text-[12px] uppercase
-                    tracking-widest text-[var(--np-text-strong)] w-[200px]
+                    tracking-widest text-[var(--np-text-strong)] w-[160px]
+                    sticky left-0 z-10 bg-[var(--np-surface-elevated)]
                   "
                 >
                   Feature
@@ -230,9 +234,9 @@ export default async function PricingPage({
               {FEATURE_MATRIX.map(row => (
                 <tr
                   key={row.label}
-                  className="border-b border-[var(--np-border)] last:border-0 hover:bg-[var(--np-surface-elevated)]"
+                  className="group border-b border-[var(--np-border)] last:border-0 hover:bg-[var(--np-surface-elevated)]"
                 >
-                  <td className="px-5 py-3 text-[var(--np-text-body)] font-medium">
+                  <td className="px-5 py-3 text-[var(--np-text-body)] font-medium sticky left-0 z-10 bg-[var(--np-surface)] group-hover:bg-[var(--np-surface-elevated)]">
                     {row.label}
                   </td>
                   {COLS.map(col => {
@@ -296,6 +300,7 @@ function TierCTA({
   currentTier,
   isLoggedIn,
   isPreselected,
+  isHighlighted,
   returnPath,
 }: {
   tier: Tier
@@ -303,6 +308,7 @@ function TierCTA({
   currentTier: Tier | null
   isLoggedIn: boolean
   isPreselected: boolean
+  isHighlighted?: boolean
   returnPath?: string
 }) {
   const baseBtn = `
@@ -324,7 +330,7 @@ function TierCTA({
   if (currentTier === tier) {
     return (
       <span
-        className={`${baseBtn} border border-[var(--np-border)] text-[var(--np-text-body)] cursor-default`}
+        className={`${baseBtn} border border-[var(--np-border)] cursor-default ${isHighlighted ? "text-[#312e81]" : "text-[var(--np-text-body)]"}`}
       >
         Current plan
       </span>
@@ -332,14 +338,13 @@ function TierCTA({
   }
 
   if (isLoggedIn && currentTier !== null) {
-    // Has a different plan — go to checkout with existing customer attached.
-    // Stripe creates a new subscription; the webhook upserts the subscription row.
-    const action = createTieredCheckoutSession.bind(null, tier, returnPath)
+    // Existing subscriber — send to billing portal for plan management.
+    // Portal handles upgrades/downgrades without creating a duplicate subscription.
     return (
-      <form action={action}>
+      <form action={createPortalSessionFromPricing}>
         <button
           type="submit"
-          className={`${baseBtn} border border-[var(--np-border)] text-[var(--np-text-body)] hover:border-[var(--np-border-strong)] cursor-pointer`}
+          className={`${baseBtn} border border-[var(--np-border)] hover:border-[var(--np-border-strong)] cursor-pointer ${isHighlighted ? "text-[#312e81]" : "text-[var(--np-text-body)]"}`}
         >
           Switch to {tier.charAt(0).toUpperCase() + tier.slice(1)}
         </button>
