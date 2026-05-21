@@ -431,7 +431,7 @@ export default async function SettingsPage({
               title="Brief history export"
               description="Download all your sent briefs as an HTML archive. You'll receive an email with a download link when the export is ready."
             />
-            <form action={requestBriefExport}>
+            <form action={async () => { await requestBriefExport() }}>
               <button
                 type="submit"
                 className="
