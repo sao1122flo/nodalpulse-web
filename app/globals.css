@@ -72,6 +72,117 @@
   --font-mono: var(--np-font-mono);
 }
 
+/* ─── Legal prose typography ─────────────────────────────────────────────── */
+.legal-prose {
+  color: var(--np-text-body);
+  font-size: 15px;
+  line-height: 1.75;
+}
+.legal-prose h1 {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--np-text-primary);
+  margin-bottom: 6px;
+}
+.legal-prose .legal-meta {
+  font-size: 13px;
+  color: var(--np-text-muted);
+  margin-bottom: 32px;
+}
+.legal-prose h2 {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--np-text-primary);
+  margin-top: 48px;
+  margin-bottom: 12px;
+  padding-top: 20px;
+  border-top: 1px solid var(--np-border);
+}
+.legal-prose h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--np-text-strong);
+  margin-top: 24px;
+  margin-bottom: 8px;
+}
+.legal-prose p {
+  margin-bottom: 14px;
+}
+.legal-prose ul {
+  list-style: disc;
+  padding-left: 22px;
+  margin-bottom: 14px;
+}
+.legal-prose ol {
+  list-style: decimal;
+  padding-left: 22px;
+  margin-bottom: 14px;
+}
+.legal-prose li {
+  margin-bottom: 6px;
+}
+.legal-prose a {
+  color: var(--np-accent-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.legal-prose a:hover {
+  color: var(--np-text-primary);
+}
+.legal-prose strong {
+  font-weight: 600;
+  color: var(--np-text-strong);
+}
+.legal-prose code {
+  font-family: var(--np-font-mono);
+  font-size: 12.5px;
+  background: var(--np-surface-deep);
+  border: 1px solid var(--np-border);
+  padding: 1px 5px;
+  border-radius: 4px;
+  color: var(--np-text-strong);
+}
+.legal-prose pre {
+  background: var(--np-surface-deep);
+  border: 1px solid var(--np-border);
+  border-radius: 6px;
+  padding: 16px;
+  margin-bottom: 14px;
+  overflow-x: auto;
+}
+.legal-prose pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 12.5px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.legal-prose hr {
+  border: none;
+  border-top: 1px solid var(--np-border);
+  margin: 32px 0;
+}
+.legal-prose table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 20px;
+  font-size: 13px;
+}
+.legal-prose th {
+  text-align: left;
+  padding: 8px 12px;
+  background: var(--np-surface-elevated);
+  border: 1px solid var(--np-border);
+  font-weight: 600;
+  color: var(--np-text-strong);
+}
+.legal-prose td {
+  padding: 8px 12px;
+  border: 1px solid var(--np-border);
+  vertical-align: top;
+}
+
 *, *::before, *::after {
   box-sizing: border-box;
 }

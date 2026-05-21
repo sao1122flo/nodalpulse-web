@@ -1,17 +1,38 @@
 "use client"
 
 import { Suspense, useState, useEffect } from "react"
-import { useSearchParams } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { authClient } from "@/lib/auth-client"
 import { MicrosoftSignInButton } from "./MicrosoftSignInButton"
 import { GoogleSignInButton } from "./GoogleSignInButton"
 
+function LoginSkeleton() {
+  return (
+    <div
+      className="w-full max-w-[400px] mx-auto rounded-[var(--np-radius-lg)] border border-[var(--np-border)] bg-[var(--np-surface-elevated)] p-8"
+      style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.4)" }}
+    >
+      <div className="animate-pulse space-y-3">
+        <div className="h-5 w-32 bg-[var(--np-surface-deep)] rounded" />
+        <div className="h-4 w-48 bg-[var(--np-surface-deep)] rounded" />
+        <div className="mt-6 space-y-2.5">
+          <div className="h-10 bg-[var(--np-surface-deep)] rounded-[var(--np-radius-md)]" />
+          <div className="h-10 bg-[var(--np-surface-deep)] rounded-[var(--np-radius-md)]" />
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function LoginPageInner() {
+  const router = useRouter()
   const searchParams = useSearchParams()
   const rawCallback = searchParams.get("callbackURL") ?? "/dashboard"
   // Reject absolute URLs and protocol-relative URLs to block open-redirect via crafted login links.
   const callbackURL =
     rawCallback.startsWith("/") && !rawCallback.includes("//") ? rawCallback : "/dashboard"
+
+  const { data: session, isPending } = authClient.useSession()
 
   const [email, setEmail] = useState("")
   const [magicStatus, setMagicStatus] = useState<"idle" | "loading" | "sent" | "error">("idle")
@@ -32,6 +53,12 @@ function LoginPageInner() {
       window.history.replaceState({}, "", window.location.pathname)
     }
   }, [])
+
+  useEffect(() => {
+    if (!isPending && session) {
+      router.replace(callbackURL)
+    }
+  }, [isPending, session, router, callbackURL])
 
   const oauthBusy = oauthProvider !== null
 
@@ -67,6 +94,9 @@ function LoginPageInner() {
       setMagicStatus("sent")
     }
   }
+
+  if (isPending) return <LoginSkeleton />
+  if (session) return null
 
   return (
     <div
@@ -192,6 +222,9 @@ function LoginPageInner() {
         By signing in, you agree to our{" "}
         <a
           href="/terms"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="Terms of Service (opens in new tab)"
           className="text-[var(--np-text-body)] underline underline-offset-2 hover:text-[var(--np-text-strong)] transition-colors"
         >
           Terms
@@ -199,6 +232,9 @@ function LoginPageInner() {
         and{" "}
         <a
           href="/privacy"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="Privacy Policy (opens in new tab)"
           className="text-[var(--np-text-body)] underline underline-offset-2 hover:text-[var(--np-text-strong)] transition-colors"
         >
           Privacy Policy

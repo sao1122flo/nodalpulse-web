@@ -101,6 +101,28 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <main className="flex-1 overflow-y-auto md:ml-[220px]">
         <MobileNav userEmail={session.user.email} />
         {children}
+        <footer className="border-t border-[var(--np-border)] px-6 py-4 mt-8">
+          <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px] text-[var(--np-text-muted)]">
+            <a href="/terms" className="hover:text-[var(--np-text-body)] transition-colors">
+              Terms
+            </a>
+            <span aria-hidden="true">·</span>
+            <a href="/privacy" className="hover:text-[var(--np-text-body)] transition-colors">
+              Privacy
+            </a>
+            <span aria-hidden="true">·</span>
+            <a
+              href="https://status.nodalpulse.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-[var(--np-text-body)] transition-colors"
+            >
+              Status
+            </a>
+            <span aria-hidden="true">·</span>
+            <span>© 2026 Cordillera Ventures LLC</span>
+          </div>
+        </footer>
       </main>
     </div>
   )
