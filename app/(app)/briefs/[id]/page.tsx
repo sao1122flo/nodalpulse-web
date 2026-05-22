@@ -136,9 +136,9 @@ export default async function BriefDetailPage({
 
       <p className="text-[var(--np-text-muted)] text-[12px] mt-4">
         Saw a docket worth following?{" "}
-        <a href="/dockets" className="text-[var(--np-accent-text)] hover:text-[var(--np-accent-hover)] transition-colors">
+        <Link href="/dockets" className="text-[var(--np-accent-text)] hover:text-[var(--np-accent-hover)] transition-colors">
           Track it in Dockets &rarr;
-        </a>
+        </Link>
       </p>
     </div>
   )

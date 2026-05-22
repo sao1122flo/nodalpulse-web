@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import Link from "next/link"
 import { redirect } from "next/navigation"
 import { headers } from "next/headers"
 import { auth } from "@/lib/auth"
@@ -117,6 +118,8 @@ export default async function SettingsPage({
     ? (rawTab as Tab)
     : "profile"
   const checkoutDone = params.checkout === "success"
+  // eslint-disable-next-line react-hooks/purity
+  const now = Date.now()
 
   // Always fetch entitlements (tab visibility depends on it).
   const ents = await getEntitlements(session.user.id)
@@ -205,9 +208,9 @@ export default async function SettingsPage({
             <FieldRow label="Name" value={session.user.name ?? "—"} />
             <div className="flex items-center justify-between py-2.5">
               <span className="text-[var(--np-text-body)] text-[13px]">Tracked dockets</span>
-              <a href="/dockets" className="text-[var(--np-accent-text)] text-[13px] hover:text-[var(--np-accent-hover)] transition-colors">
+              <Link href="/dockets" className="text-[var(--np-accent-text)] text-[13px] hover:text-[var(--np-accent-hover)] transition-colors">
                 Manage &rarr;
-              </a>
+              </Link>
             </div>
             <div className="py-2.5 border-b border-[var(--np-border)]">
               <p className="text-[var(--np-text-body)] text-[13px] mb-2">Saved searches</p>
@@ -275,7 +278,7 @@ export default async function SettingsPage({
                     </p>
                     {sub.currentPeriodEnd && (
                       <p className="text-[var(--np-text-muted)] text-[12px] mt-0.5">
-                        {Math.max(0, Math.ceil((sub.currentPeriodEnd.getTime() - Date.now()) / 86_400_000))} days remaining
+                        {Math.max(0, Math.ceil((sub.currentPeriodEnd.getTime() - now) / 86_400_000))} days remaining
                         · trial ends {formatPeriodEnd(sub.currentPeriodEnd)}
                       </p>
                     )}
