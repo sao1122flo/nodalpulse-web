@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server"
+import { sql } from "drizzle-orm"
 import { db } from "@/db/client"
-import { healthChecks } from "@/db/schema"
 
 export async function GET() {
   const checks: Record<string, string> = {}
 
   try {
-    await db.insert(healthChecks).values({})
+    await db.execute(sql`SELECT 1`)
     checks.db = "ok"
   } catch (e) {
     checks.db = `error: ${e}`
