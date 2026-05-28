@@ -56,7 +56,7 @@ export function DenseTable<T>({ columns, rows, emptyMessage = "No data." }: Dens
                     <td
                       key={String(col.key)}
                       className={[
-                        "px-4 py-0 font-mono text-[var(--np-text-body)]",
+                        "px-4 py-0 font-mono text-[var(--np-text-body)] whitespace-nowrap",
                         colIdx === 0
                           ? "sticky left-0 z-10 bg-[var(--np-surface-elevated)] group-hover:bg-[var(--np-surface-deep)] transition-colors"
                           : "",
