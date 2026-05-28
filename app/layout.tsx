@@ -7,8 +7,29 @@ const inter = Inter({ variable: "--font-inter", subsets: ["latin"] })
 const jetbrainsMono = JetBrains_Mono({ variable: "--font-jetbrains-mono", subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: { template: "%s — NodalPulse", default: "NodalPulse" },
-  description: "Regulatory intelligence for ERCOT participants.",
+  title: { template: "%s — NodalPulse", default: "NodalPulse — Regulatory Intelligence for ERCOT Participants" },
+  description: "Daily brief for ERCOT and PUCT proceedings — cited, sourced, on your desk by 06:00 CT every weekday. Track dockets, never miss a filing.",
+  openGraph: {
+    type: "website",
+    url: "https://app.nodalpulse.com",
+    siteName: "NodalPulse",
+    title: "NodalPulse — Regulatory Intelligence for ERCOT Participants",
+    description: "Daily brief for ERCOT and PUCT proceedings — cited, sourced, on your desk by 06:00 CT every weekday. Track dockets, never miss a filing.",
+    images: [
+      {
+        url: "https://nodalpulse.com/og-default.png",
+        width: 1200,
+        height: 630,
+        alt: "NodalPulse — Regulatory Intelligence for ERCOT Participants",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "NodalPulse — Regulatory Intelligence for ERCOT Participants",
+    description: "Daily brief for ERCOT and PUCT proceedings — cited, sourced, on your desk by 06:00 CT every weekday. Track dockets, never miss a filing.",
+    images: ["https://nodalpulse.com/og-default.png"],
+  },
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
