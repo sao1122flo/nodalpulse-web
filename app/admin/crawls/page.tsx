@@ -1,4 +1,4 @@
-﻿import { forbidden } from "next/navigation"
+import { forbidden } from "next/navigation"
 import { desc, inArray, like } from "drizzle-orm"
 import type { Metadata } from "next"
 import { db } from "@/db/client"
@@ -7,8 +7,9 @@ import { requireAdmin } from "@/lib/auth/require-admin"
 import { logAdminAction } from "@/lib/auth/log-admin-action"
 import { DenseTable } from "@/components/dense-table"
 import type { DenseColumn } from "@/components/dense-table"
+import { formatCT } from "@/lib/format-ct"
 
-export const metadata: Metadata = { title: "Crawls â€” Admin â€” NodalPulse" }
+export const metadata: Metadata = { title: "Crawls — Admin — NodalPulse" }
 
 type CrawlRow = {
   kind: string
@@ -55,10 +56,10 @@ export default async function AdminCrawlsPage() {
       kind: job.kind,
       status: job.status,
       attempts: String(job.attempts),
-      duration_ms: latest?.durationMs != null ? `${latest.durationMs}ms` : "â€”",
-      success: latest ? (latest.success ? "pass" : "fail") : "â€”",
-      error: job.error ?? "â€”",
-      created_at: job.createdAt.toISOString().replace("T", " ").slice(0, 19) + " UTC",
+      duration_ms: latest?.durationMs != null ? `${latest.durationMs}ms` : "—",
+      success: latest ? (latest.success ? "pass" : "fail") : "—",
+      error: job.error ?? "—",
+      created_at: formatCT(job.createdAt),
     }
   })
 
@@ -68,7 +69,21 @@ export default async function AdminCrawlsPage() {
     { key: "attempts", header: "Att." },
     { key: "duration_ms", header: "Duration" },
     { key: "success", header: "Result" },
-    { key: "error", header: "Error" },
+    {
+      key: "error",
+      header: "Error",
+      tdClassName: "max-w-[200px]",
+      render: val => {
+        const s = String(val)
+        return s === "—" ? (
+          <span className="text-[var(--np-text-muted)]">{s}</span>
+        ) : (
+          <span className="block truncate" title={s}>
+            {s}
+          </span>
+        )
+      },
+    },
     { key: "created_at", header: "Created" },
   ]
 

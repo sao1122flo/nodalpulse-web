@@ -6,6 +6,7 @@ import { requireAdmin } from "@/lib/auth/require-admin"
 import { logAdminAction } from "@/lib/auth/log-admin-action"
 import { DenseTable } from "@/components/dense-table"
 import type { DenseColumn } from "@/components/dense-table"
+import { formatDateCT } from "@/lib/format-ct"
 import { RecomposeButton } from "./RecomposeButton"
 
 export const metadata: Metadata = { title: "Users — Admin — NodalPulse" }
@@ -57,9 +58,9 @@ export default async function AdminUsersPage() {
         : "—",
     lastSession:
       row.last_session_at != null
-        ? new Date(String(row.last_session_at)).toISOString().slice(0, 10)
+        ? formatDateCT(new Date(String(row.last_session_at)))
         : "—",
-    signedUp: new Date(String(row.created_at)).toISOString().slice(0, 10),
+    signedUp: formatDateCT(new Date(String(row.created_at))),
   }))
 
   const columns: DenseColumn<UserRow>[] = [

@@ -6,6 +6,7 @@ import { evalRuns } from "@/db/schema"
 import { requireAdmin } from "@/lib/auth/require-admin"
 import { DenseTable } from "@/components/dense-table"
 import type { DenseColumn } from "@/components/dense-table"
+import { formatCT } from "@/lib/format-ct"
 
 export const metadata: Metadata = { title: "Evals — Admin — NodalPulse" }
 
@@ -30,7 +31,7 @@ export default async function AdminEvalsPage() {
     .limit(20)
 
   const rows: EvalRow[] = runs.map(run => ({
-    run_at: run.runAt.toISOString().replace("T", " ").slice(0, 19) + " UTC",
+    run_at: formatCT(run.runAt),
     model: run.model,
     prompt_ver: run.promptVer,
     taxonomy_ver: run.taxonomyVer,
