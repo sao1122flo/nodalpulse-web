@@ -5,7 +5,7 @@ import Link from "next/link"
 import { auth } from "@/lib/auth"
 import { db } from "@/db/client"
 import { userDockets, dockets, filings, extractions } from "@/db/schema"
-import { and, eq, desc } from "drizzle-orm"
+import { and, eq, gte, lt, desc } from "drizzle-orm"
 import { TrackButton } from "../TrackButton"
 
 export const metadata: Metadata = { title: "Docket" }
@@ -39,11 +39,24 @@ function formatDate(d: Date | string): string {
 
 export default async function DocketDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ docketNumber: string }>
+  searchParams: Promise<{ date?: string }>
 }) {
   const { docketNumber } = await params
+  const { date: dateParam } = await searchParams
   const dn = decodeURIComponent(docketNumber)
+
+  // Validate optional ?date=YYYY-MM-DD param; ignore if malformed
+  const filterDate = dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)
+    ? dateParam
+    : null
+
+  const filterDateStart = filterDate ? new Date(filterDate + "T00:00:00Z") : null
+  const filterDateEnd   = filterDate
+    ? new Date(new Date(filterDate + "T00:00:00Z").getTime() + 86_400_000)
+    : null
 
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session) redirect("/login")
@@ -55,7 +68,8 @@ export default async function DocketDetailPage({
     .where(and(eq(dockets.sourceId, PUCT_SOURCE_ID), eq(dockets.externalId, dn)))
     .limit(1)
 
-  // All filings for this docket, with extraction payload where available
+  // All filings for this docket, with extraction payload where available.
+  // When ?date=YYYY-MM-DD is present, filter to that day only.
   const filingRows = docketRow
     ? await db
         .select({
@@ -69,9 +83,17 @@ export default async function DocketDetailPage({
         })
         .from(filings)
         .leftJoin(extractions, eq(extractions.filingId, filings.id))
-        .where(eq(filings.docketId, docketRow.id))
+        .where(
+          filterDate && filterDateStart && filterDateEnd
+            ? and(
+                eq(filings.docketId, docketRow.id),
+                gte(filings.filedAt, filterDateStart),
+                lt(filings.filedAt,  filterDateEnd),
+              )
+            : eq(filings.docketId, docketRow.id)
+        )
         .orderBy(desc(filings.filedAt))
-        .limit(50)
+        .limit(filterDate ? 200 : 50)
     : []
 
   // Deduplicated parties across all filings
@@ -211,9 +233,11 @@ export default async function DocketDetailPage({
           {/* Filings */}
           <div>
             <h2 className="text-[var(--np-text-primary)] font-medium text-[13px] mb-3">
-              {filingRows.length === 50
-                ? "Filings — showing latest 50"
-                : `Filings (${filingRows.length})`}
+              {filterDate
+                ? `Filings — ${formatDate(filterDate)} (${filingRows.length})`
+                : filingRows.length === 50
+                  ? "Filings — showing latest 50"
+                  : `Filings (${filingRows.length})`}
             </h2>
 
             {/* Desktop table */}
