@@ -1,0 +1,3 @@
+-- Snapshot baseline (#52): all DDL in this range applied via hand scripts
+-- (0001_user_dockets through 0005_filing_dockets + seed-caiso-source).
+-- This file is intentionally a no-op; use apply-sql.mjs for schema changes.
