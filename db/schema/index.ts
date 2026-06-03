@@ -211,16 +211,20 @@ export const healthChecks = pgTable("health_checks", {
 // (puct / ercot-nprr / ercot-mn). Phase 12a: web only writes PUCT rows.
 // ---------------------------------------------------------------------------
 export const dockets = pgTable("dockets", {
-  id:         uuid("id").defaultRandom().primaryKey(),
-  sourceId:   uuid("source_id").notNull(),
-  externalId: text("external_id").notNull(),
-  title:      text("title"),
-  status:     text("status").notNull().default("open"),
-  openedAt:   date("opened_at"),
-  closedAt:   date("closed_at"),
-  metadata:   jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
-  createdAt:  timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  updatedAt:  timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  id:           uuid("id").defaultRandom().primaryKey(),
+  sourceId:     uuid("source_id").notNull(),
+  externalId:   text("external_id").notNull(),
+  title:        text("title"),
+  status:       text("status").notNull().default("open"),
+  // Market/regulator identifier, e.g. "PUCT", "ERCOT", "FERC", "CAISO-FERC", "PJM-FERC".
+  // Nullable for rows that predate T3; backfilled in migration 0004_dockets_jurisdiction.sql.
+  // New rows are stamped at create time via find_or_create_docket().
+  jurisdiction: text("jurisdiction"),
+  openedAt:     date("opened_at"),
+  closedAt:     date("closed_at"),
+  metadata:     jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+  createdAt:    timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt:    timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 })
 
 // ---------------------------------------------------------------------------
@@ -290,6 +294,24 @@ export const filings = pgTable("filings", {
   sourceUrl: text("source_url"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
 })
+
+// filing_dockets — many-to-many junction written by services; READ-ONLY from web.
+// is_primary marks the first docket in a multi-caption filing (matches filings.docket_id).
+export const filingDockets = pgTable(
+  "filing_dockets",
+  {
+    id:        uuid("id").defaultRandom().primaryKey(),
+    filingId:  uuid("filing_id").notNull().references(() => filings.id, { onDelete: "cascade" }),
+    docketId:  uuid("docket_id").notNull().references(() => dockets.id, { onDelete: "cascade" }),
+    isPrimary: boolean("is_primary").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    unique("filing_dockets_filing_docket_unique").on(t.filingId, t.docketId),
+    index("idx_filing_dockets_filing_id").on(t.filingId),
+    index("idx_filing_dockets_docket_id").on(t.docketId),
+  ],
+)
 
 // extractions — subset of columns; payload typed against ExtractionPayload.
 export const extractions = pgTable("extractions", {
