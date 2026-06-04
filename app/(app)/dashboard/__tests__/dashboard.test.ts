@@ -47,12 +47,42 @@ vi.mock("@/lib/copy", () => ({
 
 vi.mock("@/lib/services-client", () => ({
   recomposeBrief: mockRecomposeBrief,
+  getQnaUsage: vi.fn().mockResolvedValue({ ok: true, value: { used_today: 0 } }),
+}))
+
+vi.mock("@/lib/entitlements", () => ({
+  getEntitlements: vi.fn().mockResolvedValue({
+    tier: "pro",
+    dailyBrief: true,
+    marketAccess: ["PUCT", "ERCOT"],
+    trackedDockets: { limit: 20 },
+    savedSearches: { limit: 5 },
+    briefHistory: { days: 30 },
+    qa: { limitPerDay: 10 },
+    teamSeats: { limit: 1 },
+    auditExport: false,
+    apiAccess: false,
+  }),
+}))
+
+vi.mock("../queries", () => ({
+  getTrackedDocketIds:   vi.fn().mockResolvedValue([]),
+  getDeadlines:          vi.fn().mockResolvedValue([]),
+  getRecentFeed:         vi.fn().mockResolvedValue([]),
+  getMatterThreads:      vi.fn().mockResolvedValue([]),
+  jurisdictionsForMarkets: vi.fn().mockReturnValue(["PUCT", "ERCOT"]),
+  MARKET_TO_JURISDICTIONS: { PUCT: ["PUCT"], ERCOT: ["ERCOT"] },
 }))
 
 // Silence React component imports (not rendering in node env)
 vi.mock("./BriefFrame", () => ({ default: () => null }))
 vi.mock("./ReloadButton", () => ({ ReloadButton: () => null }))
 vi.mock("./RequestBriefButton", () => ({ RequestBriefButton: () => null }))
+vi.mock("../components/DeadlineStrip", () => ({ DeadlineStrip: () => null }))
+vi.mock("../components/WhatChangedFeed", () => ({ WhatChangedFeed: () => null }))
+vi.mock("../components/MatterThreads", () => ({ MatterThreads: () => null }))
+vi.mock("../components/AskTheRecord", () => ({ AskTheRecord: () => null }))
+vi.mock("@/app/(app)/components/TrialBanner", () => ({ TrialBanner: () => null }))
 vi.mock("next/link", () => ({ default: ({ children }: { children: unknown }) => children }))
 
 function makeChain(result: unknown[] = []) {
@@ -71,27 +101,18 @@ import { requestBrief } from "../actions"
 describe("DashboardPage", () => {
   beforeEach(() => vi.clearAllMocks())
 
+  const defaultSearchParams = { searchParams: Promise.resolve({}) }
+
   it("redirects to /login when no session exists", async () => {
     mockGetSession.mockResolvedValue(null)
 
-    await expect(DashboardPage()).rejects.toThrow("NEXT_REDIRECT")
+    await expect(DashboardPage(defaultSearchParams)).rejects.toThrow("NEXT_REDIRECT")
   })
 
-  it("renders without throwing when a sent brief exists and R2 returns HTML", async () => {
+  it("renders without throwing when session exists and no tracked matters", async () => {
     mockGetSession.mockResolvedValue({ user: { id: "user-1", email: "u@test.com" } })
-    mockSelect.mockReturnValue(makeChain([{
-      id: "brief-1",
-      date: "2026-05-13",
-      model: "claude-opus-4-7",
-      promptVer: "v3",
-      htmlR2Key: "briefs/user-1/2026-05-13/brief.html",
-      citationCount: 12,
-      sendStatus: "sent",
-      sentAt: new Date("2026-05-13T11:00:00Z"),
-    }]))
-    mockGetObject.mockResolvedValue("<html>brief</html>")
 
-    const result = await DashboardPage()
+    const result = await DashboardPage(defaultSearchParams)
     expect(result).toBeDefined()
   })
 })

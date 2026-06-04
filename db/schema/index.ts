@@ -13,17 +13,40 @@ import {
   unique,
 } from "drizzle-orm/pg-core"
 
-// Matches the JSONB payload written by services' extraction worker (schema_ver "1.0").
+// Matches the JSONB payload written by services' extraction worker (schema_ver "1.0",
+// prompt_ver "1.5"+).
+export interface ExtractionDeadline {
+  type?:       string          // hearing|compliance|comment_deadline|rehearing|effective_date|protest_notice|other
+  description: string
+  date:        string | null   // ISO date or null
+  source?:     string          // filing|order|notice
+  estimated?:  boolean
+  verify_url?: string | null
+}
+
+export interface ExtractionIntervention {
+  party:  string
+  stance: "support" | "oppose" | "comments" | "protest"
+}
+
 export interface ExtractionPayload {
   docket_number?:    string | null
   summary?:          string | null
   parties?:          string[]
-  deadlines?:        { description: string; date: string | null }[]
+  deadlines?:        ExtractionDeadline[]
+  interventions?:    ExtractionIntervention[]
   effective_date?:   string | null
   key_points?:       string[]
   relief_requested?: string | null
   outcome?:          string | null
   role_tags?:        string[]
+  // CAISO-specific
+  initiative_name?:  string | null
+  cpuc_proceeding_refs?: string[]
+  // PJM-specific (sector_vote and rpm_parameters are untyped for now)
+  sector_vote?:      Record<string, unknown> | null
+  rpm_parameters?:   Record<string, unknown> | null
+  rtep_cost_allocation?: { zone: string; dollars: number | null }[]
 }
 
 // ---------------------------------------------------------------------------
