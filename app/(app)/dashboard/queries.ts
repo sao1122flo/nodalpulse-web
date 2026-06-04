@@ -5,8 +5,9 @@ import {
   filings,
   extractions,
   teamMemberships,
+  filingDockets,
 } from "@/db/schema"
-import { and, eq, inArray, desc, gte, sql, isNotNull } from "drizzle-orm"
+import { and, eq, inArray, notInArray, desc, gte, sql, isNotNull } from "drizzle-orm"
 
 // ---------------------------------------------------------------------------
 // Types
@@ -221,6 +222,7 @@ export async function getDeadlines(
   // Only fetch for entitled jurisdictions; skip if none.
   if (entitledJurisdictions.length > 0) {
     try {
+      // postgres-js passes JS arrays as PostgreSQL arrays natively
       const evtRows = await db.execute<{
         title: string
         event_date: string
@@ -233,7 +235,7 @@ export async function getDeadlines(
                related_docket, source_url
         FROM market_events
         WHERE event_date >= ${today}::date
-          AND jurisdiction = ANY(${sql.raw(`ARRAY[${entitledJurisdictions.map(j => `'${j}'`).join(",")}]`)})
+          AND jurisdiction = ANY(${entitledJurisdictions})
         ORDER BY event_date
         LIMIT 50
       `)
@@ -394,44 +396,56 @@ export async function getMatterThreads(
     }
   }
 
-  // Linked dockets via filing_dockets junction (cross-jurisdiction)
-  // Find all dockets that share a filing with our tracked dockets, where ours is primary.
+  // Linked dockets via filing_dockets junction (cross-jurisdiction).
+  // Two-step Drizzle query — avoids sql.raw() which breaks with postgres-js driver.
+  // Step 1: filing IDs where a tracked docket is the primary.
+  // Step 2: other dockets linked to those filings.
   const linkedMap = new Map<string, LinkedDocket[]>()
   if (docketRows.length > 0) {
     const filteredIds = docketRows.map(d => d.id)
-    const crossRefs = await db.execute<{
-      primary_docket_id: string
-      linked_id: string
-      linked_external_id: string
-      linked_title: string | null
-      linked_jurisdiction: string | null
-    }>(sql`
-      SELECT
-        fd_primary.docket_id   AS primary_docket_id,
-        d_linked.id            AS linked_id,
-        d_linked.external_id   AS linked_external_id,
-        d_linked.title         AS linked_title,
-        d_linked.jurisdiction  AS linked_jurisdiction
-      FROM filing_dockets fd_primary
-      JOIN filing_dockets fd_linked
-        ON fd_linked.filing_id = fd_primary.filing_id
-        AND fd_linked.docket_id != fd_primary.docket_id
-      JOIN dockets d_linked ON d_linked.id = fd_linked.docket_id
-      WHERE fd_primary.docket_id = ANY(${sql.raw(`ARRAY[${filteredIds.map(id => `'${id}'`).join(",")}]`)})
-        AND fd_primary.is_primary = true
-    LIMIT 100
-    `)
 
-    for (const row of crossRefs) {
-      if (!linkedMap.has(row.primary_docket_id)) linkedMap.set(row.primary_docket_id, [])
-      const existing = linkedMap.get(row.primary_docket_id)!
-      if (!existing.find(d => d.id === row.linked_id)) {
-        existing.push({
-          id:           row.linked_id,
-          externalId:   row.linked_external_id,
-          title:        row.linked_title,
-          jurisdiction: row.linked_jurisdiction,
+    const primaryFds = await db
+      .select({ filingId: filingDockets.filingId, docketId: filingDockets.docketId })
+      .from(filingDockets)
+      .where(and(
+        inArray(filingDockets.docketId, filteredIds),
+        eq(filingDockets.isPrimary, true),
+      ))
+      .limit(200)
+
+    if (primaryFds.length > 0) {
+      const primaryFilingIds = [...new Set(primaryFds.map(r => r.filingId))]
+      const linkedFds = await db
+        .select({
+          filingId:    filingDockets.filingId,
+          linkedId:    dockets.id,
+          externalId:  dockets.externalId,
+          title:       dockets.title,
+          jurisdiction: dockets.jurisdiction,
         })
+        .from(filingDockets)
+        .innerJoin(dockets, eq(dockets.id, filingDockets.docketId))
+        .where(and(
+          inArray(filingDockets.filingId, primaryFilingIds),
+          notInArray(filingDockets.docketId, filteredIds),
+        ))
+        .limit(100)
+
+      // Map filing → primary docket to build primaryDocketId → linkedDockets
+      const filingToPrimary = new Map(primaryFds.map(r => [r.filingId, r.docketId]))
+      for (const row of linkedFds) {
+        const primaryId = filingToPrimary.get(row.filingId)
+        if (!primaryId) continue
+        if (!linkedMap.has(primaryId)) linkedMap.set(primaryId, [])
+        const existing = linkedMap.get(primaryId)!
+        if (!existing.find(d => d.id === row.linkedId)) {
+          existing.push({
+            id:           row.linkedId,
+            externalId:   row.externalId,
+            title:        row.title,
+            jurisdiction: row.jurisdiction,
+          })
+        }
       }
     }
   }
