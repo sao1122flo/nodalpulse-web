@@ -1,7 +1,8 @@
 "use client"
 
 import { useState, useCallback } from "react"
-import { grantMarketAccess, ALL_MARKETS, type Market } from "./actions"
+import { grantMarketAccess } from "./actions"
+import { ALL_MARKETS, type Market } from "./markets"
 
 interface Props {
   userId: string

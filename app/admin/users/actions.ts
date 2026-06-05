@@ -9,10 +9,11 @@ import { recomposeBrief } from "@/lib/services-client"
 import { db } from "@/db/client"
 import { adminActions, jobs, entitlements } from "@/db/schema"
 import type { Result } from "@/lib/types"
+import type { Market } from "./markets"
 
-// All markets recognised by the market_access entitlement system.
-export const ALL_MARKETS = ["PUCT", "ERCOT", "CAISO", "PJM"] as const
-export type Market = (typeof ALL_MARKETS)[number]
+// Re-export from non-server module so client components can import safely.
+export type { Market } from "./markets"
+export { ALL_MARKETS } from "./markets"
 
 export interface TriggerRecomposeArgs {
   userId: string
