@@ -7,6 +7,7 @@ import { userProfiles, savedSearches, userDockets, briefs, jobs, dockets, filing
 import { and, count, desc, eq, gte, inArray, sql } from "drizzle-orm"
 import { getEntitlements } from "@/lib/entitlements"
 import { recomposeBrief, refreshDocket } from "@/lib/services-client"
+import { JURISDICTION_TO_MARKET } from "@/app/(app)/dashboard/queries"
 import type { Result } from "@/lib/types"
 import type { SavedSearchQuery } from "@/db/schema"
 import {
@@ -154,8 +155,10 @@ async function autoTrackHotDockets(userId: string, marketTags: string[]): Promis
   if (docketLimit === 0) return  // free tier — no tracking allowed
 
   // Intersect requested jurisdictions with entitled markets (#05 TODO closed, #07).
+  // Map DB jurisdiction ("CAISO-FERC") back to market code ("CAISO") before checking
+  // ents.marketAccess, which stores market codes not jurisdiction strings.
   const jurisdictions = resolveJurisdictions(marketTags)
-    .filter(j => ents.marketAccess.includes(j))
+    .filter(j => ents.marketAccess.includes(JURISDICTION_TO_MARKET[j] ?? j))
   if (jurisdictions.length === 0) return
 
   const currentCount = Number(ct)

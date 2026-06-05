@@ -9,6 +9,7 @@ import type { DenseColumn } from "@/components/dense-table"
 import { formatDateCT } from "@/lib/format-ct"
 import { RecomposeButton } from "./RecomposeButton"
 import { GrantMarketsButton } from "./GrantMarketsButton"
+import { OnboardBetaButton } from "./OnboardBetaButton"
 
 export const metadata: Metadata = { title: "Users — Admin — NodalPulse" }
 
@@ -85,6 +86,7 @@ export default async function AdminUsersPage() {
       header: "Actions",
       render: (_val, row) => (
         <span className="flex items-center gap-2">
+          <OnboardBetaButton userId={row.id} />
           <RecomposeButton userId={row.id} />
           <GrantMarketsButton userId={row.id} />
         </span>
