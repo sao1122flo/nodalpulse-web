@@ -6,6 +6,7 @@ import { type Tier, TIER_ENTITLEMENTS, resolveTier } from "@/lib/tiers"
 export interface EntitlementSet {
   tier: Tier | null
   dailyBrief: boolean
+  marketAccess: string[]                 // ["PUCT","ERCOT","CAISO","PJM"] — entitled markets
   trackedDockets: { limit: number | null }
   savedSearches: { limit: number | null }
   briefHistory: { days: number | null }
@@ -53,9 +54,15 @@ export async function getEntitlements(userId: string): Promise<EntitlementSet> {
   const qa       = byFeature["qa"]                as { limit_per_day: number | null } | undefined
   const seats    = byFeature["team_seats"]        as { limit: number } | undefined
 
+  // Collect entitled markets from all "market_access:<MARKET>" rows (post-self-heal).
+  const marketAccess = Object.keys(byFeature)
+    .filter(f => f.startsWith("market_access:"))
+    .map(f => f.slice("market_access:".length))
+
   return {
     tier,
     dailyBrief:     "daily_brief"   in byFeature,
+    marketAccess,
     trackedDockets: { limit: dockets  !== undefined ? dockets.limit  : 0 },
     savedSearches:  { limit: searches !== undefined ? searches.limit : 0 },
     briefHistory:   { days: history   !== undefined ? history.days   : 0 },

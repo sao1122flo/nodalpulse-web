@@ -8,6 +8,7 @@ import { DenseTable } from "@/components/dense-table"
 import type { DenseColumn } from "@/components/dense-table"
 import { formatDateCT } from "@/lib/format-ct"
 import { RecomposeButton } from "./RecomposeButton"
+import { GrantMarketsButton } from "./GrantMarketsButton"
 
 export const metadata: Metadata = { title: "Users — Admin — NodalPulse" }
 
@@ -82,7 +83,12 @@ export default async function AdminUsersPage() {
     {
       key: "id",
       header: "Actions",
-      render: (_val, row) => <RecomposeButton userId={row.id} />,
+      render: (_val, row) => (
+        <span className="flex items-center gap-2">
+          <RecomposeButton userId={row.id} />
+          <GrantMarketsButton userId={row.id} />
+        </span>
+      ),
     },
   ]
 

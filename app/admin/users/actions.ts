@@ -1,14 +1,18 @@
 "use server"
 
 import { createHash } from "crypto"
-import { and, eq, gte } from "drizzle-orm"
+import { and, eq, gte, inArray } from "drizzle-orm"
 import { requireAdmin } from "@/lib/auth/require-admin"
 import { logAdminAction } from "@/lib/auth/log-admin-action"
 import { checkRateLimit } from "@/lib/admin/rate-limit"
 import { recomposeBrief } from "@/lib/services-client"
 import { db } from "@/db/client"
-import { adminActions, jobs } from "@/db/schema"
+import { adminActions, jobs, entitlements } from "@/db/schema"
 import type { Result } from "@/lib/types"
+
+// All markets recognised by the market_access entitlement system.
+export const ALL_MARKETS = ["PUCT", "ERCOT", "CAISO", "PJM"] as const
+export type Market = (typeof ALL_MARKETS)[number]
 
 export interface TriggerRecomposeArgs {
   userId: string
@@ -94,4 +98,63 @@ export async function pollJobStatus(jobId: string): Promise<Result<PollJobStatus
 
   if (!row) return { ok: false, error: "Job not found" }
   return { ok: true, value: { status: row.status, error: row.error ?? null } }
+}
+
+// ---------------------------------------------------------------------------
+// Grant market_access entitlements (Beta manual onboarding + future add-ons)
+// ---------------------------------------------------------------------------
+
+export interface GrantMarketsArgs {
+  userId: string
+  markets: Market[]
+  expiresAt: Date | null  // null = no expiry; set to Beta end date for temporary grants
+}
+
+/**
+ * Non-destructive market_access grant — one entitlement row per market (fila-por-mercado).
+ * Safe to re-run: deletes then re-inserts only the specified market rows.
+ * Other entitlement rows (daily_brief, tracked_dockets, …) are untouched.
+ *
+ * Usage: grant Beta users access to CAISO/PJM before Stripe is wired (#13/#14).
+ * At GA, flip BETA_MARKETS_FREE=false + run backfill-tier-entitlements to revoke.
+ */
+export async function grantMarketAccess(
+  args: GrantMarketsArgs,
+): Promise<Result<{ granted: string[] }>> {
+  const admin = await requireAdmin()
+  if (!admin.ok) return { ok: false, error: "Unauthorized" }
+
+  if (args.markets.length === 0) {
+    return { ok: false, error: "No markets specified." }
+  }
+
+  const features = args.markets.map(m => `market_access:${m}`)
+
+  // Delete-then-insert (idempotent) for the specified markets only.
+  await db
+    .delete(entitlements)
+    .where(
+      and(
+        eq(entitlements.userId, args.userId),
+        inArray(entitlements.feature, features),
+      ),
+    )
+
+  await db.insert(entitlements).values(
+    features.map(feature => ({
+      userId:    args.userId,
+      feature,
+      value:     {},
+      expiresAt: args.expiresAt,
+    })),
+  )
+
+  await logAdminAction({
+    action:     "admin.grant_market_access",
+    targetType: "user",
+    targetId:   args.userId,
+    metadata:   { markets: args.markets, expiresAt: args.expiresAt },
+  })
+
+  return { ok: true, value: { granted: args.markets } }
 }

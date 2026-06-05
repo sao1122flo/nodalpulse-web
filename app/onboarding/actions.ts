@@ -3,10 +3,10 @@
 import { headers } from "next/headers"
 import { auth } from "@/lib/auth"
 import { db } from "@/db/client"
-import { userProfiles, savedSearches, userDockets, briefs, jobs } from "@/db/schema"
-import { and, count, eq, sql } from "drizzle-orm"
+import { userProfiles, savedSearches, userDockets, briefs, jobs, dockets, filings } from "@/db/schema"
+import { and, count, desc, eq, gte, inArray, sql } from "drizzle-orm"
 import { getEntitlements } from "@/lib/entitlements"
-import { recomposeBrief } from "@/lib/services-client"
+import { recomposeBrief, refreshDocket } from "@/lib/services-client"
 import type { Result } from "@/lib/types"
 import type { SavedSearchQuery } from "@/db/schema"
 import {
@@ -105,6 +105,108 @@ export async function saveRole(role: string): Promise<void> {
 // Step 2: save markets
 // ---------------------------------------------------------------------------
 
+// Maps onboarding market-tag values to dockets.jurisdiction strings.
+// ERCOT zone tags → PUCT (Texas regulator for ERCOT).
+// Market-level tags (future multi-market onboarding) map directly.
+const MARKET_TAG_TO_JURISDICTIONS: Record<string, string[]> = {
+  // Current ERCOT zone tags (step 2 onboarding)
+  all:     ["PUCT"],
+  north:   ["PUCT"],
+  houston: ["PUCT"],
+  west:    ["PUCT"],
+  south:   ["PUCT"],
+  // Future market-level tags
+  PUCT:        ["PUCT"],
+  ERCOT:       ["ERCOT"],
+  FERC:        ["FERC", "CAISO-FERC", "PJM-FERC"],
+  PJM:         ["PJM-FERC"],
+  CAISO:       ["CAISO-FERC"],
+  "PJM-FERC":  ["PJM-FERC"],
+  "CAISO-FERC":["CAISO-FERC"],
+}
+
+function resolveJurisdictions(marketTags: string[]): string[] {
+  const result = new Set<string>()
+  for (const tag of marketTags) {
+    for (const j of MARKET_TAG_TO_JURISDICTIONS[tag] ?? []) {
+      result.add(j)
+    }
+  }
+  return result.size > 0 ? [...result] : ["PUCT"]  // safe fallback for unknown tags
+}
+
+/**
+ * Auto-track top-5 most-active dockets for the user's selected markets.
+ * Option B wow: populates the dashboard and brief from minute zero without
+ * waiting for the user to manually enter docket numbers.
+ *
+ * marketTags: the raw trackedTags value just saved in saveMarkets().
+ * Respects tier limit — stops at (limit - currentCount) slots.
+ * Service refresh calls are best-effort (short timeout, errors swallowed).
+ */
+async function autoTrackHotDockets(userId: string, marketTags: string[]): Promise<void> {
+  const [ents, [{ ct }]] = await Promise.all([
+    getEntitlements(userId),
+    db.select({ ct: count() }).from(userDockets).where(eq(userDockets.userId, userId)),
+  ])
+
+  const docketLimit = ents.trackedDockets.limit
+  if (docketLimit === 0) return  // free tier — no tracking allowed
+
+  // Intersect requested jurisdictions with entitled markets (#05 TODO closed, #07).
+  const jurisdictions = resolveJurisdictions(marketTags)
+    .filter(j => ents.marketAccess.includes(j))
+  if (jurisdictions.length === 0) return
+
+  const currentCount = Number(ct)
+  // Cap auto-track at 5, further bounded by remaining entitlement slots.
+  const slotsAvailable = docketLimit === null
+    ? 5
+    : Math.max(0, Math.min(5, docketLimit - currentCount))
+  if (slotsAvailable === 0) return
+
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+  const filingCount = sql<number>`count(${filings.id})`
+
+  // Fetch a few extra so we have room to skip already-tracked ones.
+  const [hotDockets, alreadyTracked] = await Promise.all([
+    db
+      .select({ id: dockets.id, externalId: dockets.externalId })
+      .from(dockets)
+      .innerJoin(filings, eq(filings.docketId, dockets.id))
+      .where(and(
+        inArray(dockets.jurisdiction, jurisdictions),
+        gte(filings.filedAt, thirtyDaysAgo),
+      ))
+      .groupBy(dockets.id, dockets.externalId)
+      .orderBy(desc(filingCount))
+      .limit(slotsAvailable + 5),
+    db
+      .select({ docketId: userDockets.docketId })
+      .from(userDockets)
+      .where(eq(userDockets.userId, userId)),
+  ])
+
+  const trackedIds = new Set(alreadyTracked.map(r => r.docketId))
+  const toTrack = hotDockets
+    .filter(d => !trackedIds.has(d.id))
+    .slice(0, slotsAvailable)
+
+  if (toTrack.length === 0) return
+
+  await db
+    .insert(userDockets)
+    .values(toTrack.map(d => ({ userId, docketId: d.id })))
+    .onConflictDoNothing()
+
+  // Enqueue backfill extraction for each; parallel, short timeout, best-effort.
+  await Promise.allSettled(
+    toTrack.map(d =>
+      refreshDocket({ docket_number: d.externalId, user_id: userId }, 2_000)
+    )
+  )
+}
+
 export async function saveMarkets(markets: string[]): Promise<void> {
   const session = await getSession()
   await db
@@ -123,6 +225,12 @@ export async function saveMarkets(markets: string[]): Promise<void> {
         onboardingStep: sql`GREATEST(${userProfiles.onboardingStep}, 2)`,
       },
     })
+
+  // Auto-track hot dockets so the brief and dashboard have content from day one.
+  // Errors are non-fatal — user can always track manually in step 3.
+  await autoTrackHotDockets(session.user.id, markets).catch(err => {
+    console.error("[saveMarkets] autoTrackHotDockets failed:", err)
+  })
 }
 
 // ---------------------------------------------------------------------------

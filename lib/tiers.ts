@@ -1,9 +1,30 @@
+// Beta: CAISO+PJM waived for all paid tiers during Beta window.
+// Flip BETA_MARKETS_FREE=false in Railway env to enforce add-on pricing at GA.
+const BETA_MARKETS_FREE = process.env.BETA_MARKETS_FREE !== "false"
+
 export type Tier = "starter" | "pro" | "team" | "org"
 
 export interface EntitlementRow {
   feature: string
   value: Record<string, unknown>
 }
+
+// Texas (PUCT/ERCOT) is the base market for all paid tiers.
+const _TEXAS_MARKETS: EntitlementRow[] = [
+  { feature: "market_access:PUCT",  value: {} },
+  { feature: "market_access:ERCOT", value: {} },
+]
+
+// Regional add-ons: +$49 Starter/Pro, +$99 Team — waived during Beta.
+const _REGIONAL_ADDON: EntitlementRow[] = [
+  { feature: "market_access:CAISO", value: {} },
+  { feature: "market_access:PJM",   value: {} },
+]
+
+// Tiers during Beta get all markets; at GA non-org tiers get Texas only.
+const _betaOrTexas = BETA_MARKETS_FREE
+  ? [..._TEXAS_MARKETS, ..._REGIONAL_ADDON]
+  : _TEXAS_MARKETS
 
 export const TIER_ENTITLEMENTS: Record<Tier, EntitlementRow[]> = {
   starter: [
@@ -13,6 +34,7 @@ export const TIER_ENTITLEMENTS: Record<Tier, EntitlementRow[]> = {
     { feature: "brief_history",    value: { days: 30 } },
     { feature: "qa",               value: { limit_per_day: 10 } },
     { feature: "team_seats",       value: { limit: 1 } },
+    ..._betaOrTexas,
   ],
   pro: [
     { feature: "daily_brief",      value: {} },
@@ -21,6 +43,7 @@ export const TIER_ENTITLEMENTS: Record<Tier, EntitlementRow[]> = {
     { feature: "brief_history",    value: { days: 365 } },
     { feature: "qa",               value: { limit_per_day: 30 } },
     { feature: "team_seats",       value: { limit: 1 } },
+    ..._betaOrTexas,
   ],
   team: [
     { feature: "daily_brief",      value: {} },
@@ -30,6 +53,7 @@ export const TIER_ENTITLEMENTS: Record<Tier, EntitlementRow[]> = {
     { feature: "qa",               value: { limit_per_day: 100 } },
     { feature: "team_seats",       value: { limit: 5 } },
     { feature: "sla",              value: { uptime: 0.995 } },
+    ..._betaOrTexas,
   ],
   org: [
     { feature: "daily_brief",      value: {} },
@@ -41,6 +65,9 @@ export const TIER_ENTITLEMENTS: Record<Tier, EntitlementRow[]> = {
     { feature: "sla",              value: { uptime: 0.999 } },
     { feature: "audit_export",     value: {} },
     { feature: "api_access",       value: {} },
+    // Org always includes all markets, regardless of Beta flag.
+    ..._TEXAS_MARKETS,
+    ..._REGIONAL_ADDON,
   ],
 }
 
@@ -73,10 +100,10 @@ export interface TierDisplay {
 }
 
 export const TIER_DISPLAY: TierDisplay[] = [
-  { tier: "starter", name: "Starter", price: "$49",    period: "/mo", highlight: false, contactOnly: false },
-  { tier: "pro",     name: "Pro",     price: "$199",   period: "/mo", highlight: true,  contactOnly: false },
-  { tier: "team",    name: "Team",    price: "$599",   period: "/mo", highlight: false, contactOnly: false },
-  { tier: "org",     name: "Org",     price: "$1,499", period: "/mo", highlight: false, contactOnly: true  },
+  { tier: "starter", name: "Starter", price: "$99",    period: "/mo", highlight: false, contactOnly: false },
+  { tier: "pro",     name: "Pro",     price: "$249",   period: "/mo", highlight: true,  contactOnly: false },
+  { tier: "team",    name: "Team",    price: "$749",   period: "/mo", highlight: false, contactOnly: false },
+  { tier: "org",     name: "Org",     price: "$1,999", period: "/mo", highlight: false, contactOnly: true  },
 ]
 
 export interface FeatureRow {
@@ -84,10 +111,18 @@ export interface FeatureRow {
   values: Record<"free" | Tier, string>
 }
 
+const _marketLabel = BETA_MARKETS_FREE
+  ? "TX + CAISO + PJM (Beta)"
+  : "Texas only"
+
 export const FEATURE_MATRIX: FeatureRow[] = [
   {
     label: "Daily brief",
     values: { free: "Public digest only", starter: "Personalized", pro: "Personalized", team: "Personalized", org: "Personalized" },
+  },
+  {
+    label: "Markets",
+    values: { free: "—", starter: _marketLabel, pro: _marketLabel, team: _marketLabel, org: "All markets" },
   },
   {
     label: "Tracked dockets",

@@ -13,6 +13,12 @@ import { getEntitlements } from "@/lib/entitlements"
 // PUCT source UUID — stable, seeded by services on startup.
 const PUCT_SOURCE_ID = "0725032a-239f-475d-bdd5-251adad3ae05"
 
+// Maps source UUIDs to the jurisdiction string used in dockets.jurisdiction and market_access entitlements.
+// Extend when additional source IDs are introduced (FERC, PJM, CAISO).
+const SOURCE_TO_JURISDICTION: Record<string, string> = {
+  [PUCT_SOURCE_ID]: "PUCT",
+}
+
 export async function trackDocket({
   docketNumber,
 }: {
@@ -31,6 +37,13 @@ export async function trackDocket({
   if (docketLimit === 0) {
     return { ok: false, error: "Upgrade to a paid plan to track dockets." }
   }
+
+  // Market-access gate — single choke point; controls briefs, auto-track, and dashboard.
+  const jurisdiction = SOURCE_TO_JURISDICTION[PUCT_SOURCE_ID]
+  if (jurisdiction && !ents.marketAccess.includes(jurisdiction)) {
+    return { ok: false, error: "Your plan does not include access to this market. See /pricing for details." }
+  }
+
   if (docketLimit !== null) {
     const [{ ct }] = await db
       .select({ ct: count() })
