@@ -11,8 +11,8 @@ import {
   getDeadlines,
   getRecentFeed,
   getMatterThreads,
+  getDashboardReadiness,
   jurisdictionsForMarkets,
-  MARKET_TO_JURISDICTIONS,
 } from "./queries"
 import { DeadlineStrip } from "./components/DeadlineStrip"
 import { WhatChangedFeed } from "./components/WhatChangedFeed"
@@ -21,8 +21,12 @@ import { AskTheRecord } from "./components/AskTheRecord"
 
 export const metadata: Metadata = { title: "Dashboard" }
 
-// Market chip labels ordered for display
-const MARKET_ORDER = ["PUCT", "ERCOT", "CAISO", "PJM", "FERC"]
+// UI chip groups — PUCT+ERCOT collapse into one "Texas" chip (display only; entitlements unchanged)
+const CHIP_GROUPS = [
+  { label: "Texas",      markets: ["PUCT", "ERCOT"] },
+  { label: "California", markets: ["CAISO"] },
+  { label: "PJM",        markets: ["PJM"] },
+] as const
 
 export default async function DashboardPage({
   searchParams,
@@ -46,21 +50,40 @@ export default async function DashboardPage({
   const qnaLimitPerDay = qa.limitPerDay ?? 0
   const qnaUsedToday = qnaUsageResult.ok ? qnaUsageResult.value.used_today : 0
 
-  // Resolve active market filter: validate against entitled markets
-  const validMarkets = new Set(marketAccess)
-  const activeMarket =
-    marketParam && (validMarkets.has(marketParam) || marketParam === "all")
+  // Compute which UI chips this user is entitled to see
+  const validMarketSet = new Set(marketAccess)
+  const entitledChips = CHIP_GROUPS.filter(g => g.markets.some(m => validMarketSet.has(m)))
+  const chipLabelSet: Set<string> = new Set(entitledChips.map(g => g.label))
+
+  // Active chip: validate marketParam against chip labels (not raw market codes)
+  const activeChip =
+    marketParam && (chipLabelSet.has(marketParam) || marketParam === "all")
       ? marketParam === "all" ? null : marketParam
       : null
 
+  const activeChipDef = activeChip ? entitledChips.find(g => g.label === activeChip) ?? null : null
+
   // Entitled jurisdictions for DB filtering
   const entitledJurisdictions = jurisdictionsForMarkets(marketAccess)
-  const filteredJurisdictions = activeMarket
-    ? (MARKET_TO_JURISDICTIONS[activeMarket] ?? [])
+  const filteredJurisdictions = activeChipDef
+    ? jurisdictionsForMarkets(activeChipDef.markets.filter(m => validMarketSet.has(m)))
     : entitledJurisdictions
 
   // --- tracked dockets (Mine vs Team) ---
   const docketIds = await getTrackedDocketIds(session.user.id, isTeamView)
+
+  // Detect "backfill in flight": dockets tracked but zero extractions yet, and
+  // tracking started within the last 4 h (avoids stuck banner on cold dockets).
+  const BACKFILL_WINDOW_MS = 4 * 60 * 60 * 1000
+  const readiness = docketIds.length > 0
+    ? await getDashboardReadiness(session.user.id, docketIds)
+    : null
+  const isPreparing = !!(
+    readiness &&
+    !readiness.hasExtractions &&
+    readiness.latestTrackAt &&
+    Date.now() - readiness.latestTrackAt.getTime() < BACKFILL_WINDOW_MS
+  )
 
   // Deadlines first; threads use deadlines for the next-deadline pill.
   // Feed is independent and runs in parallel with deadlines.
@@ -71,9 +94,8 @@ export default async function DashboardPage({
 
   const threadsWithDeadlines = await getMatterThreads(docketIds, filteredJurisdictions, deadlines)
 
-  // --- progressive disclosure: show market chips only if >1 market ---
-  const showChips = marketAccess.length > 1
-  const displayedMarkets = MARKET_ORDER.filter(m => validMarkets.has(m))
+  // Progressive disclosure: show chip row only when user has >1 entitled chip
+  const showChips = entitledChips.length > 1
 
   return (
     <div className="px-6 py-8 max-w-[1080px] mx-auto">
@@ -133,28 +155,28 @@ export default async function DashboardPage({
           <Link
             href={isTeamView ? "/dashboard?view=team" : "/dashboard"}
             className={`px-3 py-1 rounded-full text-[12px] font-medium border transition-colors ${
-              activeMarket === null
+              activeChip === null
                 ? "bg-[var(--np-accent)] text-white border-[var(--np-accent)]"
                 : "bg-[var(--np-surface-elevated)] text-[var(--np-text-muted)] border-[var(--np-border)] hover:text-[var(--np-text-body)] hover:border-[var(--np-border-strong)]"
             }`}
           >
             All
           </Link>
-          {displayedMarkets.map(m => {
+          {entitledChips.map(chip => {
             const href = isTeamView
-              ? `/dashboard?view=team&market=${m}`
-              : `/dashboard?market=${m}`
+              ? `/dashboard?view=team&market=${chip.label}`
+              : `/dashboard?market=${chip.label}`
             return (
               <Link
-                key={m}
+                key={chip.label}
                 href={href}
                 className={`px-3 py-1 rounded-full text-[12px] font-medium border transition-colors ${
-                  activeMarket === m
+                  activeChip === chip.label
                     ? "bg-[var(--np-accent)] text-white border-[var(--np-accent)]"
                     : "bg-[var(--np-surface-elevated)] text-[var(--np-text-muted)] border-[var(--np-border)] hover:text-[var(--np-text-body)] hover:border-[var(--np-border-strong)]"
                 }`}
               >
-                {m}
+                {chip.label}
               </Link>
             )
           })}
@@ -183,7 +205,16 @@ export default async function DashboardPage({
         </div>
       )}
 
-      {docketIds.length > 0 && (
+      {/* ── Preparing state: dockets tracked but backfill not yet done ── */}
+      {docketIds.length > 0 && isPreparing && (
+        <div className="rounded-[var(--np-radius-lg)] border border-[var(--np-border)] bg-[var(--np-surface-elevated)] px-6 py-10 text-center">
+          <p className="text-[var(--np-text-muted)] text-[14px]">
+            Preparando tu dashboard — los filings aparecen aquí en breve.
+          </p>
+        </div>
+      )}
+
+      {docketIds.length > 0 && !isPreparing && (
         <div className="flex flex-col gap-10">
 
           {/* ── Zone 1: Deadline strip ── */}

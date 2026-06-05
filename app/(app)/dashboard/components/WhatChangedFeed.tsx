@@ -47,7 +47,7 @@ export function WhatChangedFeed({ groups }: Props) {
   if (groups.length === 0) {
     return (
       <div className="text-[var(--np-text-muted)] text-[13px] py-3">
-        No new filings in the last 7 days for tracked matters.
+        No recent changes.
       </div>
     )
   }

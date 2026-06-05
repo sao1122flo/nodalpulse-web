@@ -10,7 +10,7 @@ import { SignOutButton } from "./sign-out-button"
 import { MobileNav } from "./MobileNav"
 
 const NAV_ITEMS = [
-  { href: "/dashboard", label: "Today's Brief", icon: LayoutDashboard },
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/briefs", label: "Brief History", icon: Archive },
   { href: "/dockets", label: "Dockets", icon: BookOpen },
   { href: "/chat", label: "Q&A", icon: MessageSquare },

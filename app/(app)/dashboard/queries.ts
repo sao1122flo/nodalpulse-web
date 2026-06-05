@@ -349,6 +349,41 @@ export async function getRecentFeed(
 // One card per tracked docket, with: next deadline, parties, linked dockets.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// getDashboardReadiness
+// Detects whether a user's tracked dockets have any extractions yet.
+// Used to distinguish "backfill in flight" (recently tracked, zero extractions)
+// from "quiet market" (has extractions, just no recent activity).
+// ---------------------------------------------------------------------------
+
+export async function getDashboardReadiness(
+  userId: string,
+  docketIds: string[],
+): Promise<{ hasExtractions: boolean; latestTrackAt: Date | null }> {
+  if (docketIds.length === 0) return { hasExtractions: false, latestTrackAt: null }
+
+  const [extractionRows, trackRows] = await Promise.all([
+    db
+      .select({ filingId: extractions.filingId })
+      .from(extractions)
+      .innerJoin(filings, eq(filings.id, extractions.filingId))
+      .where(inArray(filings.docketId, docketIds))
+      .limit(1),
+    db
+      .select({ latest: sql<string>`max(created_at)` })
+      .from(userDockets)
+      .where(and(
+        eq(userDockets.userId, userId),
+        inArray(userDockets.docketId, docketIds),
+      )),
+  ])
+
+  return {
+    hasExtractions: extractionRows.length > 0,
+    latestTrackAt: trackRows[0]?.latest ? new Date(trackRows[0].latest) : null,
+  }
+}
+
 export async function getMatterThreads(
   docketIds: string[],
   entitledJurisdictions: string[],
