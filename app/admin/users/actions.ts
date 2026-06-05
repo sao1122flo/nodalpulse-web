@@ -11,10 +11,6 @@ import { adminActions, jobs, entitlements } from "@/db/schema"
 import type { Result } from "@/lib/types"
 import type { Market } from "./markets"
 
-// Re-export from non-server module so client components can import safely.
-export type { Market } from "./markets"
-export { ALL_MARKETS } from "./markets"
-
 export interface TriggerRecomposeArgs {
   userId: string
   briefDate: string
