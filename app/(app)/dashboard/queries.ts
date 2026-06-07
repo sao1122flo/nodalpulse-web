@@ -32,6 +32,7 @@ export interface DashboardDeadline {
   estimated: boolean
   verifyUrl: string | null
   daysRemaining: number
+  mentionCount: number
 }
 
 export interface FeedItem {
@@ -155,6 +156,46 @@ export async function getTrackedDocketIds(
 }
 
 // ---------------------------------------------------------------------------
+// Deadline semantic dedup helpers
+// ---------------------------------------------------------------------------
+
+// Classify a hearing description into a known subtype so that ~30 filings all
+// mentioning the same merits hearing collapse to one card.  Priority order:
+// check prehearing first — a prehearing notice may mention the merits date in
+// passing and would otherwise be mis-classified as "merits".
+// Returns null when the description doesn't match any known subtype; callers
+// must fall back to description-based keying (unknown subtypes are never merged).
+function hearingSubtype(description: string): string | null {
+  const d = description.toLowerCase()
+  if (/pre[\s-]?hearing/.test(d))                   return "prehearing"
+  if (/merits|evidentiary|five[\s-]day/.test(d))    return "merits"
+  if (/status conf|scheduling conf/.test(d))         return "status_conf"
+  if (/settlement/.test(d))                          return "settlement"
+  if (/technical conf|workshop/.test(d))             return "technical"
+  if (/oral argument/.test(d))                       return "oral_argument"
+  if (/public participation|public hearing/.test(d)) return "public"
+  return null
+}
+
+// Build a semantic dedup key for one deadline entry.
+// For hearing-type entries (type="hearing" or type absent), attempt subtype
+// classification.  If a known subtype is found, collapse by
+// (docket, date, hearing, subtype).  If the subtype is unknown, fall back to
+// the normalised description prefix so nothing is merged silently.
+// For all other types, use (docket, date, type, description_prefix).
+function deadlineDedupeKey(
+  docketId: string,
+  dl: { date: string | null; type?: string | null; description: string },
+): string {
+  const norm = dl.description.toLowerCase().replace(/\s+/g, " ").trim()
+  if (dl.type === "hearing" || !dl.type) {
+    const sub = hearingSubtype(dl.description)
+    if (sub !== null) return `${docketId}:${dl.date}:hearing:${sub}`
+  }
+  return `${docketId}:${dl.date}:${dl.type ?? "other"}:${norm.slice(0, 80)}`
+}
+
+// ---------------------------------------------------------------------------
 // getDeadlines — Zone 1
 // Merges filing-attached deadlines (extractions JSONB) + market_events calendar.
 // Scoped to tracked dockets ∩ entitled markets.
@@ -197,26 +238,48 @@ export async function getDeadlines(
     .orderBy(desc(filings.filedAt))
     .limit(600)
 
+  // Semantic dedup: group entries by (docket, date, type, subtype) so many
+  // filings all mentioning the same merits hearing collapse to one card.
+  // Within each group: keep the longest description (most complete wording),
+  // prefer confirmed (estimated=false) if any mention is confirmed.
+  const dlGroups = new Map<string, DashboardDeadline>()
+  const dlDescLen = new Map<string, number>()
+
   for (const row of rows) {
     for (const dl of row.payload?.deadlines ?? []) {
       if (!dl.date || dl.date < today) continue
-      const key = `${row.docketId}:${dl.date}:${dl.description}`
-      if (seen.has(key)) continue
-      seen.add(key)
-      result.push({
-        docketId:         row.docketId,
-        docketExternalId: row.docketExternalId,
-        docketTitle:      row.docketTitle,
-        jurisdiction:     row.jurisdiction,
-        type:             dl.type ?? "other",
-        description:      dl.description,
-        date:             dl.date,
-        estimated:        dl.estimated ?? true,
-        verifyUrl:        dl.verify_url ?? null,
-        daysRemaining:    Math.ceil((new Date(dl.date + "T12:00:00Z").getTime() - todayMs) / DAYS_MS),
-      })
+      const key = deadlineDedupeKey(row.docketId, dl)
+      const daysRemaining = Math.ceil(
+        (new Date(dl.date + "T12:00:00Z").getTime() - todayMs) / DAYS_MS
+      )
+      const existing = dlGroups.get(key)
+      if (!existing) {
+        dlGroups.set(key, {
+          docketId:         row.docketId,
+          docketExternalId: row.docketExternalId,
+          docketTitle:      row.docketTitle,
+          jurisdiction:     row.jurisdiction,
+          type:             dl.type ?? "other",
+          description:      dl.description,
+          date:             dl.date,
+          estimated:        dl.estimated ?? true,
+          verifyUrl:        dl.verify_url ?? null,
+          daysRemaining,
+          mentionCount:     1,
+        })
+        dlDescLen.set(key, dl.description.length)
+      } else {
+        existing.mentionCount++
+        const prevLen = dlDescLen.get(key) ?? 0
+        if (dl.description.length > prevLen) {
+          existing.description = dl.description
+          dlDescLen.set(key, dl.description.length)
+        }
+        if (!(dl.estimated ?? true)) existing.estimated = false
+      }
     }
   }
+  result.push(...dlGroups.values())
 
   // --- market_events calendar (services-owned table, raw SQL) ---
   // Only fetch for entitled jurisdictions; skip if none.
@@ -258,6 +321,7 @@ export async function getDeadlines(
           estimated:        evt.estimated,
           verifyUrl:        evt.source_url ?? null,
           daysRemaining,
+          mentionCount:     1,
         })
       }
     } catch {

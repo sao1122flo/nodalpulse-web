@@ -107,6 +107,11 @@ export function DeadlineStrip({ deadlines }: Props) {
                       est.
                     </span>
                   )}
+                  {dl.mentionCount > 1 && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--np-surface-deep)] text-[var(--np-text-muted)] border border-[var(--np-border)]">
+                      {dl.mentionCount} filings
+                    </span>
+                  )}
                 </div>
                 <p className="text-[13px] text-[var(--np-text-body)] leading-snug line-clamp-2">
                   {dl.description}
