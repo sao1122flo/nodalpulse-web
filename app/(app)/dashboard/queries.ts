@@ -337,6 +337,20 @@ export async function getDeadlines(
 // Recent filings (last 7 days), grouped by primary docket (matter).
 // ---------------------------------------------------------------------------
 
+// PUCT stores each submission as multiple files (typically ZIP + PDF) with
+// consecutive document IDs under the same item number, e.g.:
+//   59475_5876_1653802 (ZIP)  and  59475_5876_1653803 (PDF)
+// This helper extracts the stable submission key "{docket}_{item}" from a
+// 3-segment all-numeric external_id.  Returns null for any other format
+// (FERC, ERCOT, CAISO, …) so they are never collapsed — scoped to PUCT only.
+function puctSubmissionKey(externalId: string): string | null {
+  const parts = externalId.split("_")
+  if (parts.length === 3 && parts.every(p => /^\d+$/.test(p))) {
+    return `${parts[0]}_${parts[1]}`
+  }
+  return null
+}
+
 export async function getRecentFeed(
   docketIds: string[],
   entitledJurisdictions: string[],
@@ -348,16 +362,17 @@ export async function getRecentFeed(
 
   const rows = await db
     .select({
-      filingId:         filings.id,
-      filingTitle:      filings.title,
-      docType:          filings.docType,
-      filedAt:          filings.filedAt,
-      sourceUrl:        filings.sourceUrl,
-      payload:          extractions.payload,
-      docketId:         dockets.id,
-      docketExternalId: dockets.externalId,
-      docketTitle:      dockets.title,
-      jurisdiction:     dockets.jurisdiction,
+      filingId:          filings.id,
+      filingExternalId:  filings.externalId,
+      filingTitle:       filings.title,
+      docType:           filings.docType,
+      filedAt:           filings.filedAt,
+      sourceUrl:         filings.sourceUrl,
+      payload:           extractions.payload,
+      docketId:          dockets.id,
+      docketExternalId:  dockets.externalId,
+      docketTitle:       dockets.title,
+      jurisdiction:      dockets.jurisdiction,
     })
     .from(filings)
     .innerJoin(dockets, and(
@@ -377,7 +392,16 @@ export async function getRecentFeed(
     .orderBy(desc(filings.filedAt))
     .limit(200)
 
+  // Submission-key dedup: collapse PUCT ZIP+PDF pairs to one FeedItem.
+  // Prefer the row that has an extraction/summary; tiebreak → PDF source.
+  // Non-PUCT external_ids (puctSubmissionKey returns null) use filingId as
+  // the key and are never collapsed.
+  // Brief-level dedup for the same pattern is already handled in services by
+  // dedup_candidates() using metadata.item_key — no change needed there.
   const groups = new Map<string, FeedGroup>()
+  // docketId → submKey → index in group.items (for in-place replacement)
+  const submKeyIndex = new Map<string, Map<string, number>>()
+
   for (const r of rows) {
     if (!groups.has(r.docketId)) {
       groups.set(r.docketId, {
@@ -387,8 +411,16 @@ export async function getRecentFeed(
         jurisdiction:     r.jurisdiction,
         items:            [],
       })
+      submKeyIndex.set(r.docketId, new Map())
     }
-    groups.get(r.docketId)!.items.push({
+
+    const group    = groups.get(r.docketId)!
+    const keyMap   = submKeyIndex.get(r.docketId)!
+    const submKey  = puctSubmissionKey(r.filingExternalId) ?? r.filingId
+    const hasSummary = r.payload?.summary != null
+    const isPdf      = r.sourceUrl?.toLowerCase().endsWith(".pdf") ?? false
+
+    const newItem: FeedItem = {
       filingId:         r.filingId,
       filingTitle:      r.filingTitle,
       docType:          r.docType,
@@ -399,7 +431,21 @@ export async function getRecentFeed(
       docketExternalId: r.docketExternalId,
       docketTitle:      r.docketTitle,
       jurisdiction:     r.jurisdiction,
-    })
+    }
+
+    const existingIdx = keyMap.get(submKey)
+    if (existingIdx === undefined) {
+      keyMap.set(submKey, group.items.length)
+      group.items.push(newItem)
+    } else {
+      const existing = group.items[existingIdx]
+      const existingHasSummary = existing.summary != null
+      const existingIsPdf      = existing.sourceUrl?.toLowerCase().endsWith(".pdf") ?? false
+      const newIsBetter =
+        (hasSummary && !existingHasSummary) ||
+        (hasSummary === existingHasSummary && isPdf && !existingIsPdf)
+      if (newIsBetter) group.items[existingIdx] = newItem
+    }
   }
 
   // Sort groups by most-recent filing first

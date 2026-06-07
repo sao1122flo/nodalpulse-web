@@ -307,15 +307,16 @@ export const apiKeys = pgTable("api_keys", {
 
 // filings — subset of columns used by docket detail queries.
 export const filings = pgTable("filings", {
-  id:        uuid("id").defaultRandom().primaryKey(),
-  sourceId:  uuid("source_id").notNull(),
-  docketId:  uuid("docket_id"),
-  docType:   text("doc_type").notNull(),
-  title:     text("title").notNull(),
-  filer:     text("filer"),
-  filedAt:   timestamp("filed_at", { withTimezone: true }).notNull(),
-  sourceUrl: text("source_url"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  id:         uuid("id").defaultRandom().primaryKey(),
+  sourceId:   uuid("source_id").notNull(),
+  externalId: text("external_id").notNull(),
+  docketId:   uuid("docket_id"),
+  docType:    text("doc_type").notNull(),
+  title:      text("title").notNull(),
+  filer:      text("filer"),
+  filedAt:    timestamp("filed_at", { withTimezone: true }).notNull(),
+  sourceUrl:  text("source_url"),
+  createdAt:  timestamp("created_at", { withTimezone: true }).notNull(),
 })
 
 // filing_dockets — many-to-many junction written by services; READ-ONLY from web.
