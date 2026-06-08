@@ -136,12 +136,6 @@ export function MatterThreads({ threads }: Props) {
               </div>
             )}
 
-            {/* Roadmap honesty: CPUC leg */}
-            {thread.linkedDockets.some(d => d.jurisdiction === "CPUC") && (
-              <p className="mt-2 text-[11px] text-[var(--np-text-muted)] italic">
-                CPUC leg — cross-filing tracked; proceeding details coming soon.
-              </p>
-            )}
           </div>
         )
       })}
