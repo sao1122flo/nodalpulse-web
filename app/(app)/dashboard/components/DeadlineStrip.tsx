@@ -123,12 +123,12 @@ export function DeadlineStrip({ deadlines }: Props) {
                 <p className="text-[13px] text-[var(--np-text-body)] leading-snug line-clamp-2">
                   {dl.description}
                 </p>
-                {dl.docketTitle && docketHref && (
+                {docketHref && (
                   <Link
                     href={docketHref}
                     className="text-[11px] text-[var(--np-accent-text)] hover:text-[var(--np-accent-hover)] transition-colors mt-0.5 block"
                   >
-                    {dl.docketExternalId} — {dl.docketTitle}
+                    {dl.docketTitle ? `${dl.docketExternalId} — ${dl.docketTitle}` : dl.docketExternalId}
                   </Link>
                 )}
               </div>
