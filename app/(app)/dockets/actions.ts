@@ -5,18 +5,26 @@ import { headers } from "next/headers"
 import { auth } from "@/lib/auth"
 import { db } from "@/db/client"
 import { userDockets, dockets, filings, extractions } from "@/db/schema"
-import { and, count, eq, desc, sql } from "drizzle-orm"
+import { and, count, eq, desc, sql, isNotNull, inArray } from "drizzle-orm"
 import type { Result } from "@/lib/types"
 import { refreshDocket } from "@/lib/services-client"
 import { getEntitlements } from "@/lib/entitlements"
 
 // PUCT source UUID — stable, seeded by services on startup.
+// Only used for creating NEW PUCT dockets that haven't been crawled yet.
 const PUCT_SOURCE_ID = "0725032a-239f-475d-bdd5-251adad3ae05"
 
-// Maps source UUIDs to the jurisdiction string used in dockets.jurisdiction and market_access entitlements.
-// Extend when additional source IDs are introduced (FERC, PJM, CAISO).
-const SOURCE_TO_JURISDICTION: Record<string, string> = {
-  [PUCT_SOURCE_ID]: "PUCT",
+// dockets.jurisdiction → market_access entitlement code.
+// Mirrors the mapping in dashboard/queries.ts.
+const JURISDICTION_TO_MARKET: Record<string, string> = {
+  PUCT:        "PUCT",
+  ERCOT:       "ERCOT",
+  "CAISO-FERC": "CAISO",
+  CAISO:       "CAISO",
+  CPUC:        "CAISO",
+  "PJM-FERC":  "PJM",
+  PJM:         "PJM",
+  FERC:        "FERC",
 }
 
 export async function trackDocket({
@@ -38,12 +46,6 @@ export async function trackDocket({
     return { ok: false, error: "Upgrade to a paid plan to track dockets." }
   }
 
-  // Market-access gate — single choke point; controls briefs, auto-track, and dashboard.
-  const jurisdiction = SOURCE_TO_JURISDICTION[PUCT_SOURCE_ID]
-  if (jurisdiction && !ents.marketAccess.includes(jurisdiction)) {
-    return { ok: false, error: "Your plan does not include access to this market. See /pricing for details." }
-  }
-
   if (docketLimit !== null) {
     const [{ ct }] = await db
       .select({ ct: count() })
@@ -57,14 +59,32 @@ export async function trackDocket({
     }
   }
 
-  // Find or create the docket entity (UNIQUE on source_id + external_id)
-  let [docketRow] = await db
-    .select({ id: dockets.id })
+  // Authoritative lookup: find the docket by external_id from any crawler source.
+  // Dockets with jurisdiction = NULL are ghosts from the old PUCT-only path — skip them.
+  const [existingDocket] = await db
+    .select({ id: dockets.id, jurisdiction: dockets.jurisdiction })
     .from(dockets)
-    .where(and(eq(dockets.sourceId, PUCT_SOURCE_ID), eq(dockets.externalId, dn)))
+    .where(and(eq(dockets.externalId, dn), isNotNull(dockets.jurisdiction)))
     .limit(1)
 
-  if (!docketRow) {
+  let docketRow: { id: string }
+
+  if (existingDocket) {
+    // Docket is already indexed by a crawler — use it and gate on its market.
+    const market = JURISDICTION_TO_MARKET[existingDocket.jurisdiction ?? ""] ?? null
+    if (!market || !ents.marketAccess.includes(market)) {
+      return {
+        ok: false,
+        error: `Your plan does not include access to this market${market ? ` (${market})` : ""}. See /pricing for details.`,
+      }
+    }
+    docketRow = existingDocket
+  } else if (/^\d+$/.test(dn)) {
+    // Docket not indexed yet — only accept all-digit PUCT control numbers for on-demand creation.
+    if (!ents.marketAccess.includes("PUCT")) {
+      return { ok: false, error: "Your plan does not include access to this market. See /pricing for details." }
+    }
+
     const [labelRow] = await db
       .select({ title: filings.title })
       .from(extractions)
@@ -80,6 +100,7 @@ export async function trackDocket({
         externalId: dn,
         title:      labelRow?.title ?? null,
         status:     "open",
+        jurisdiction: "PUCT",
       })
       .onConflictDoNothing()
 
@@ -89,10 +110,14 @@ export async function trackDocket({
       .where(and(eq(dockets.sourceId, PUCT_SOURCE_ID), eq(dockets.externalId, dn)))
       .limit(1)
 
+    if (!created) return { ok: false, error: "Failed to create docket" }
     docketRow = created
+  } else {
+    return {
+      ok: false,
+      error: "Docket not found in our index. CPUC, FERC, and CAISO dockets populate automatically — try again in a few minutes.",
+    }
   }
-
-  if (!docketRow) return { ok: false, error: "Failed to create docket" }
 
   await db
     .insert(userDockets)
@@ -124,19 +149,20 @@ export async function untrackDocket({
 
   const dn = docketNumber.trim()
 
-  const [docketRow] = await db
+  // Look up ALL docket rows for this external_id (any source, including ghosts)
+  // so that untrack removes every user_docket pointing to this docket number.
+  const allRows = await db
     .select({ id: dockets.id })
     .from(dockets)
-    .where(and(eq(dockets.sourceId, PUCT_SOURCE_ID), eq(dockets.externalId, dn)))
-    .limit(1)
+    .where(eq(dockets.externalId, dn))
 
-  if (docketRow) {
+  if (allRows.length > 0) {
     await db
       .delete(userDockets)
       .where(
         and(
           eq(userDockets.userId, session.user.id),
-          eq(userDockets.docketId, docketRow.id),
+          inArray(userDockets.docketId, allRows.map(r => r.id)),
         ),
       )
   }

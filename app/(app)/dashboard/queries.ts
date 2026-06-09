@@ -213,6 +213,11 @@ export async function getDeadlines(
   const seen = new Set<string>()
 
   // --- filing-attached deadlines ---
+  // Fetch ALL extractions for tracked+entitled dockets — no filing-date window,
+  // no per-docket cap.  Only filings that have an extraction row are returned
+  // (innerJoin), so a quiet docket with one old filing containing a near-term
+  // deadline is never evicted by a busy docket's recent filing volume.
+  // The global cap is applied after dedup+sort, on the resulting deadlines.
   const rows = await db
     .select({
       docketId:         dockets.id,
@@ -226,7 +231,7 @@ export async function getDeadlines(
       eq(dockets.id, filings.docketId),
       isNotNull(filings.docketId),
     ))
-    .leftJoin(extractions, eq(extractions.filingId, filings.id))
+    .innerJoin(extractions, eq(extractions.filingId, filings.id))
     .where(
       and(
         inArray(filings.docketId, docketIds),
@@ -235,8 +240,6 @@ export async function getDeadlines(
           : sql`true`,
       )
     )
-    .orderBy(desc(filings.filedAt))
-    .limit(600)
 
   // Semantic dedup: group entries by (docket, date, type, subtype) so many
   // filings all mentioning the same merits hearing collapse to one card.
@@ -329,7 +332,8 @@ export async function getDeadlines(
     }
   }
 
-  return result.sort((a, b) => a.daysRemaining - b.daysRemaining)
+  // Cap after global sort — keeps the strip bounded regardless of tracking breadth.
+  return result.sort((a, b) => a.daysRemaining - b.daysRemaining).slice(0, 100)
 }
 
 // ---------------------------------------------------------------------------

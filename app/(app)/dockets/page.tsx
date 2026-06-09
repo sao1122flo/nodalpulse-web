@@ -44,7 +44,7 @@ export default async function DocketsPage() {
           Dockets
         </h1>
         <p className="text-[var(--np-text-muted)] text-[13px] mt-0.5">
-          Track PUCT dockets for targeted coverage in your daily brief.
+          Track regulatory dockets for targeted coverage in your daily brief.
         </p>
       </div>
 
@@ -56,7 +56,7 @@ export default async function DocketsPage() {
             No tracked dockets yet
           </h2>
           <p className="text-[var(--np-text-muted)] text-[13px] max-w-sm mx-auto leading-relaxed">
-            Enter a PUCT control number above to track it. Your brief will always include
+            Enter a docket number above to track it. Your brief will always include
             the latest filings for tracked dockets.
           </p>
         </div>

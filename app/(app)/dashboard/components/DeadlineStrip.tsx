@@ -1,3 +1,6 @@
+"use client"
+
+import { useState } from "react"
 import Link from "next/link"
 import type { DashboardDeadline } from "../queries"
 
@@ -47,11 +50,15 @@ function urgencyBg(days: number): string {
   return "border-[var(--np-border)] bg-[var(--np-surface-elevated)]"
 }
 
+const STRIP_INITIAL = 8
+
 interface Props {
   deadlines: DashboardDeadline[]
 }
 
 export function DeadlineStrip({ deadlines }: Props) {
+  const [expanded, setExpanded] = useState(false)
+
   if (deadlines.length === 0) {
     return (
       <div className="text-[var(--np-text-muted)] text-[13px] py-3">
@@ -60,8 +67,8 @@ export function DeadlineStrip({ deadlines }: Props) {
     )
   }
 
-  // Show up to 8 in the strip; the rest collapse
-  const visible = deadlines.slice(0, 8)
+  const visible = expanded ? deadlines : deadlines.slice(0, STRIP_INITIAL)
+  const hidden  = deadlines.length - STRIP_INITIAL
 
   return (
     <div className="flex flex-col gap-2">
@@ -147,10 +154,13 @@ export function DeadlineStrip({ deadlines }: Props) {
         )
       })}
 
-      {deadlines.length > 8 && (
-        <p className="text-[12px] text-[var(--np-text-muted)] pl-1">
-          + {deadlines.length - 8} more deadline{deadlines.length - 8 !== 1 ? "s" : ""}
-        </p>
+      {!expanded && hidden > 0 && (
+        <button
+          onClick={() => setExpanded(true)}
+          className="text-left text-[12px] text-[var(--np-accent-text)] hover:text-[var(--np-accent-hover)] transition-colors pl-1 py-0.5 cursor-pointer"
+        >
+          + {hidden} more deadline{hidden !== 1 ? "s" : ""} ↓
+        </button>
       )}
     </div>
   )

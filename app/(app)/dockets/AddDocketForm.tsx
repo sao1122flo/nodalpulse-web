@@ -37,7 +37,7 @@ export function AddDocketForm() {
       <input
         ref={inputRef}
         type="text"
-        placeholder="PUCT control number (e.g. 59475)"
+        placeholder="Docket number (e.g. 59475, A2508008, EL25-49)"
         required
         disabled={isPending}
         className="
