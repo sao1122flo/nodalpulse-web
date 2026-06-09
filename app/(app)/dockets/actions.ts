@@ -160,33 +160,19 @@ export async function trackDocket({
     )
 
     if (!onDemandResult.ok) {
-      if (onDemandResult.error.kind === "unexpected" && onDemandResult.error.status === 429) {
-        return { ok: false, error: "You've triggered too many backfills this hour. Try again later." }
-      }
-      // Network / transient error — create stub anyway and let daily crawl populate.
-      // Fall through to the stub-creation block below with a flag so warming=true.
+      const is429 = onDemandResult.error.kind === "unexpected" && onDemandResult.error.status === 429
+      if (is429) return { ok: false, error: "You've triggered too many backfills this hour. Try again later." }
+      // Network / transient error — do NOT create a stub (would be an unfilled ghost).
+      return { ok: false, error: "Couldn't reach the indexer right now. Try again in a moment." }
     }
 
-    if (onDemandResult.ok && !onDemandResult.value.valid) {
+    if (!onDemandResult.value.valid) {
       return { ok: false, error: `Docket "${dn}" was not found in the ${sourceSlug.toUpperCase()} index. Verify the number and try again.` }
     }
 
-    // Step 2: use the docket_id returned by services (or create a stub if services failed).
-    if (onDemandResult.ok && onDemandResult.value.docket_id) {
-      // Services already created/found the canonical docket row.
-      docketRow = { id: onDemandResult.value.docket_id }
-    } else {
-      // Services call failed transiently — create a stub so tracking is not lost.
-      // The daily crawl will populate it.
-      const sourceId = NON_PUCT_SOURCE_IDS[sourceSlug]
-      const jurisdiction = SOURCE_JURISDICTION[sourceSlug]
-      await db.insert(dockets).values({ sourceId, externalId: dn, jurisdiction, status: "open" }).onConflictDoNothing()
-      const [stub] = await db.select({ id: dockets.id }).from(dockets)
-        .where(and(eq(dockets.sourceId, sourceId), eq(dockets.externalId, dn))).limit(1)
-      if (!stub) return { ok: false, error: "Failed to create docket" }
-      docketRow = stub
-    }
-    // Backfill is enqueued (or will run via daily crawl) — always warming.
+    // Services validated + enqueued the backfill, returned the canonical docket_id.
+    docketRow = { id: onDemandResult.value.docket_id }
+
     await db.insert(userDockets).values({ userId: session.user.id, docketId: docketRow.id }).onConflictDoNothing()
     revalidatePath("/dockets")
     revalidatePath(`/dockets/${dn}`)
