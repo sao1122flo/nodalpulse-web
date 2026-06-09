@@ -18,6 +18,7 @@ interface Answer {
 
 export function AskTheRecord({ limitPerDay, usedToday }: Props) {
   const [question, setQuestion] = useState("")
+  const [pendingQuestion, setPendingQuestion] = useState<string | null>(null)
   const [answer, setAnswer] = useState<Answer | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [conversationId, setConversationId] = useState<string | null>(null)
@@ -35,6 +36,7 @@ export function AskTheRecord({ limitPerDay, usedToday }: Props) {
 
     setError(null)
     setQuestion("")
+    setPendingQuestion(q)
 
     startTransition(async () => {
       const result = await sendQuestion(q, conversationId)
@@ -55,6 +57,7 @@ export function AskTheRecord({ limitPerDay, usedToday }: Props) {
       const { answer: text, citations, conversation_id, used_today } = result.value
       if (!conversationId) setConversationId(conversation_id)
       setUsed(used_today)
+      setPendingQuestion(null)
       setAnswer({ question: q, text, citations })
     })
   }
@@ -130,7 +133,12 @@ export function AskTheRecord({ limitPerDay, usedToday }: Props) {
 
       {/* Loading */}
       {isPending && (
-        <div className="px-4 pb-3">
+        <div className="px-4 pb-3 space-y-1">
+          {pendingQuestion && (
+            <p className="text-[12px] font-medium text-[var(--np-text-body)]">
+              Q: {pendingQuestion}
+            </p>
+          )}
           <p className="text-[12px] text-[var(--np-text-muted)]">
             Searching your filings…
           </p>
@@ -139,7 +147,12 @@ export function AskTheRecord({ limitPerDay, usedToday }: Props) {
 
       {/* Error */}
       {error && (
-        <div className="px-4 pb-3">
+        <div className="px-4 pb-3 space-y-1.5">
+          {pendingQuestion && (
+            <p className="text-[12px] font-medium text-[var(--np-text-body)]">
+              Q: {pendingQuestion}
+            </p>
+          )}
           <div className="rounded-[var(--np-radius-md)] border border-[rgba(239,68,68,0.25)] bg-[rgba(239,68,68,0.04)] px-3 py-2 text-[12px] text-[var(--np-danger)]">
             {error}
           </div>
