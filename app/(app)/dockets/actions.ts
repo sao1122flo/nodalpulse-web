@@ -7,12 +7,33 @@ import { db } from "@/db/client"
 import { userDockets, dockets, filings, extractions } from "@/db/schema"
 import { and, count, eq, desc, sql, isNotNull, inArray } from "drizzle-orm"
 import type { Result } from "@/lib/types"
-import { refreshDocket } from "@/lib/services-client"
+import { crawlOnDemand, refreshDocket } from "@/lib/services-client"
 import { getEntitlements } from "@/lib/entitlements"
 
 // PUCT source UUID — stable, seeded by services on startup.
 // Only used for creating NEW PUCT dockets that haven't been crawled yet.
 const PUCT_SOURCE_ID = "0725032a-239f-475d-bdd5-251adad3ae05"
+
+// Source UUIDs for non-PUCT on-demand docket creation (mirrors services sources table).
+const NON_PUCT_SOURCE_IDS: Record<string, string> = {
+  cpuc: "a584c91a-888d-4ba5-8d2c-8f3101f84db3",
+  ferc: "7467c1b9-613c-4379-91d3-10fdabe435c3",
+}
+
+// Jurisdiction stamped on new non-PUCT stubs; mirrors _SOURCE_JURISDICTION in services.
+const SOURCE_JURISDICTION: Record<string, string> = {
+  cpuc: "CPUC",
+  ferc: "FERC",
+}
+
+// Detect source_slug from a docket number that wasn't found in the DB.
+// Returns null for unrecognised formats (rejects before stub creation).
+function detectSourceSlug(dn: string): "cpuc" | "ferc" | null {
+  const u = dn.toUpperCase().trim()
+  if (/^[ARI]\d/.test(u)) return "cpuc"            // CPUC: A2508008, R2502005, I2604008
+  if (/^(EL|ER|RM|QF|RP|CP)\d/.test(u)) return "ferc" // FERC/PJM: EL25-49, ER26-1556
+  return null
+}
 
 // dockets.jurisdiction → market_access entitlement code.
 // Mirrors the mapping in dashboard/queries.ts.
@@ -113,10 +134,63 @@ export async function trackDocket({
     if (!created) return { ok: false, error: "Failed to create docket" }
     docketRow = created
   } else {
-    return {
-      ok: false,
-      error: "Docket not found in our index. CPUC, FERC, and CAISO dockets populate automatically — try again in a few minutes.",
+    // Not in index + not all-digit PUCT → attempt format-based on-demand seed.
+    const sourceSlug = detectSourceSlug(dn)
+    if (!sourceSlug) {
+      return { ok: false, error: "Unrecognized docket format. Check the number and try again." }
     }
+
+    // Market gate: CPUC requires CAISO; FERC-format requires PJM or CAISO.
+    if (sourceSlug === "cpuc") {
+      if (!ents.marketAccess.includes("CAISO")) {
+        return { ok: false, error: "Your plan does not include access to California (CPUC) proceedings. See /pricing for details." }
+      }
+    } else {
+      if (!ents.marketAccess.includes("PJM") && !ents.marketAccess.includes("CAISO")) {
+        return { ok: false, error: "Your plan does not include access to FERC/PJM proceedings. See /pricing for details." }
+      }
+    }
+
+    // Step 1: validate inline + enqueue backfill via services.
+    // Services probes the source (~1-3 s), creates/finds the docket row,
+    // enqueues a parametrized crawl job, and returns the canonical docket_id.
+    const onDemandResult = await crawlOnDemand(
+      { source_slug: sourceSlug, proceeding_id: dn, user_id: session.user.id },
+      15_000,
+    )
+
+    if (!onDemandResult.ok) {
+      if (onDemandResult.error.kind === "unexpected" && onDemandResult.error.status === 429) {
+        return { ok: false, error: "You've triggered too many backfills this hour. Try again later." }
+      }
+      // Network / transient error — create stub anyway and let daily crawl populate.
+      // Fall through to the stub-creation block below with a flag so warming=true.
+    }
+
+    if (onDemandResult.ok && !onDemandResult.value.valid) {
+      return { ok: false, error: `Docket "${dn}" was not found in the ${sourceSlug.toUpperCase()} index. Verify the number and try again.` }
+    }
+
+    // Step 2: use the docket_id returned by services (or create a stub if services failed).
+    if (onDemandResult.ok && onDemandResult.value.docket_id) {
+      // Services already created/found the canonical docket row.
+      docketRow = { id: onDemandResult.value.docket_id }
+    } else {
+      // Services call failed transiently — create a stub so tracking is not lost.
+      // The daily crawl will populate it.
+      const sourceId = NON_PUCT_SOURCE_IDS[sourceSlug]
+      const jurisdiction = SOURCE_JURISDICTION[sourceSlug]
+      await db.insert(dockets).values({ sourceId, externalId: dn, jurisdiction, status: "open" }).onConflictDoNothing()
+      const [stub] = await db.select({ id: dockets.id }).from(dockets)
+        .where(and(eq(dockets.sourceId, sourceId), eq(dockets.externalId, dn))).limit(1)
+      if (!stub) return { ok: false, error: "Failed to create docket" }
+      docketRow = stub
+    }
+    // Backfill is enqueued (or will run via daily crawl) — always warming.
+    await db.insert(userDockets).values({ userId: session.user.id, docketId: docketRow.id }).onConflictDoNothing()
+    revalidatePath("/dockets")
+    revalidatePath(`/dockets/${dn}`)
+    return { ok: true, value: { warming: true } }
   }
 
   await db
@@ -124,6 +198,7 @@ export async function trackDocket({
     .values({ userId: session.user.id, docketId: docketRow.id })
     .onConflictDoNothing()
 
+  // PUCT path: refresh-docket queues extraction of any already-crawled filings.
   // SERVICES_API_KEY must stay server-side only — never expose to client;
   // client-controlled user_id is advisory, bearer token is the security boundary.
   const warmResult = await refreshDocket(

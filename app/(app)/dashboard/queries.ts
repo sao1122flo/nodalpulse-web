@@ -83,8 +83,12 @@ export interface MatterThread {
 export const MARKET_TO_JURISDICTIONS: Record<string, string[]> = {
   PUCT:  ["PUCT"],
   ERCOT: ["ERCOT"],
-  CAISO: ["CAISO-FERC", "CAISO", "CPUC"],
-  PJM:   ["PJM-FERC", "PJM"],
+  // "FERC" included so on-demand-tracked FERC-format dockets (jurisdiction='FERC')
+  // surface under the California and PJM chips until the jurisdiction is narrowed
+  // by the daily crawl.  v1 limitation: an ER/EL docket defaults to 'FERC'; it
+  // shows under both chips rather than the precise one.  Tracked in #87.
+  CAISO: ["CAISO-FERC", "CAISO", "CPUC", "FERC"],
+  PJM:   ["PJM-FERC", "PJM", "FERC"],
   FERC:  ["FERC"],
 }
 

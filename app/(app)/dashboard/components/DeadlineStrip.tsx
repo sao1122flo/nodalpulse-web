@@ -162,6 +162,14 @@ export function DeadlineStrip({ deadlines }: Props) {
           + {hidden} more deadline{hidden !== 1 ? "s" : ""} ↓
         </button>
       )}
+      {expanded && hidden > 0 && (
+        <button
+          onClick={() => setExpanded(false)}
+          className="text-left text-[12px] text-[var(--np-text-muted)] hover:text-[var(--np-text-body)] transition-colors pl-1 py-0.5 cursor-pointer"
+        >
+          View less ↑
+        </button>
+      )}
     </div>
   )
 }

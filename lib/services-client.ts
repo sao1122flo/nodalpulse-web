@@ -207,6 +207,21 @@ export function getQnaUsage(
   return get("/qna/usage", { user_id: userId })
 }
 
+// ── On-demand crawl ───────────────────────────────────────────────────────────
+
+export interface CrawlOnDemandResult {
+  found: number
+  valid: boolean
+  docket_id: string
+}
+
+export function crawlOnDemand(
+  params: { source_slug: string; proceeding_id: string; user_id: string },
+  timeoutMs: number = 15_000,
+): Promise<Result<CrawlOnDemandResult, ServicesError>> {
+  return post("/crawl/on-demand", params, timeoutMs)
+}
+
 // ── Brief history export ───────────────────────────────────────────────────────
 
 export interface BriefHistoryExportResult {
