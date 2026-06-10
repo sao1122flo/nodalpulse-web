@@ -114,7 +114,7 @@ function LoginPageInner() {
           </span>
         </div>
         <p className="text-[var(--np-text-muted)] text-[13px] leading-snug">
-          Regulatory intelligence for ERCOT participants.
+          Regulatory intelligence for US power markets.
         </p>
       </div>
 
