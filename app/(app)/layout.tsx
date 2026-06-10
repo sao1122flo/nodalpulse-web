@@ -13,7 +13,7 @@ const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/briefs", label: "Brief History", icon: Archive },
   { href: "/dockets", label: "Dockets", icon: BookOpen },
-  { href: "/chat", label: "Q&A", icon: MessageSquare },
+  { href: "/chat", label: "Ask the Record", icon: MessageSquare },
   { href: "/settings", label: "Settings", icon: Settings },
 ]
 

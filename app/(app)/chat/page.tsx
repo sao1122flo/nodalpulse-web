@@ -10,7 +10,7 @@ import { eq } from "drizzle-orm"
 import { ChatClient } from "./ChatClient"
 import { TrialBanner } from "@/app/(app)/components/TrialBanner"
 
-export const metadata: Metadata = { title: "Q&A — NodalPulse" }
+export const metadata: Metadata = { title: "Ask the Record" }
 
 export default async function ChatPage() {
   const session = await auth.api.getSession({ headers: await headers() })
