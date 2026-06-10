@@ -1,26 +1,47 @@
 import type { Metadata } from "next"
-import { redirect } from "next/navigation"
+import { redirect, notFound } from "next/navigation"
 import { headers } from "next/headers"
 import Link from "next/link"
 import { auth } from "@/lib/auth"
 import { db } from "@/db/client"
 import { userDockets, dockets, filings, extractions } from "@/db/schema"
-import { and, eq, gte, lt, desc } from "drizzle-orm"
+import { and, eq, gte, lt, desc, isNotNull, count } from "drizzle-orm"
 import { TrackButton } from "../TrackButton"
 
 export const metadata: Metadata = { title: "Docket" }
 
-const PUCT_SOURCE_ID = "0725032a-239f-475d-bdd5-251adad3ae05"
+const JURISDICTION_BADGE: Record<string, string> = {
+  PUCT:         "PUCT",
+  ERCOT:        "ERCOT",
+  "CAISO-FERC": "CAISO",
+  CAISO:        "CAISO",
+  CPUC:         "CPUC",
+  "PJM-FERC":   "PJM",
+  PJM:          "PJM",
+  FERC:         "FERC",
+}
 
 const DOC_TYPE_LABELS: Record<string, string> = {
-  "puct-application":  "Application",
-  "puct-order":        "Order",
-  "puct-pfd":          "Proposal for Decision",
-  "puct-response":     "Response",
-  "puct-compliance":   "Compliance Filing",
-  "puct-rulemaking":   "Rulemaking",
-  "puct-open-meeting": "Open Meeting",
-  "puct-filing":       "Filing",
+  // PUCT
+  "puct-application":      "Application",
+  "puct-order":            "Order",
+  "puct-pfd":              "Proposal for Decision",
+  "puct-response":         "Response",
+  "puct-compliance":       "Compliance Filing",
+  "puct-rulemaking":       "Rulemaking",
+  "puct-open-meeting":     "Open Meeting",
+  "puct-filing":           "Filing",
+  // FERC / PJM-FERC
+  "ferc-order":            "Order",
+  "ferc-tariff-amendment": "Tariff Amendment",
+  "pjm-filing":            "Filing",
+  // CAISO / CPUC
+  "caiso-filing":          "Filing",
+  "cpuc-filing":           "Filing",
+  // ERCOT
+  "ercot-nprr":            "NPRR",
+  "ercot-pgrr":            "PGRR",
+  "ercot-mn":              "Market Notice",
 }
 
 function docTypeLabel(t: string): string {
@@ -61,12 +82,19 @@ export default async function DocketDetailPage({
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session) redirect("/login")
 
-  // Look up the docket row — needed for both the filings query and tracking check
+  // Look up the docket row — any jurisdiction, excluding ghost rows (jurisdiction IS NULL).
+  // When multiple rows share the same external_id (cross-source duplicates), pick the one
+  // with the most filings for a deterministic, content-rich result.
   const [docketRow] = await db
-    .select({ id: dockets.id })
+    .select({ id: dockets.id, jurisdiction: dockets.jurisdiction })
     .from(dockets)
-    .where(and(eq(dockets.sourceId, PUCT_SOURCE_ID), eq(dockets.externalId, dn)))
+    .leftJoin(filings, eq(filings.docketId, dockets.id))
+    .where(and(eq(dockets.externalId, dn), isNotNull(dockets.jurisdiction)))
+    .groupBy(dockets.id, dockets.jurisdiction)
+    .orderBy(desc(count(filings.id)))
     .limit(1)
+
+  if (!docketRow) notFound()
 
   // All filings for this docket, with extraction payload where available.
   // When ?date=YYYY-MM-DD is present, filter to that day only.
@@ -155,7 +183,7 @@ export default async function DocketDetailPage({
       <div className="flex items-start justify-between gap-4 mb-6">
         <div>
           <h1 className="text-[var(--np-text-primary)] text-xl font-semibold tracking-tight">
-            PUCT {dn}
+            {JURISDICTION_BADGE[docketRow.jurisdiction ?? ""] ?? docketRow.jurisdiction ?? ""} {dn}
           </h1>
           {filingRows[0]?.title && (
             <p className="text-[var(--np-text-muted)] text-[13px] mt-0.5 max-w-lg">
@@ -172,8 +200,8 @@ export default async function DocketDetailPage({
             No filings found for docket {dn}
           </h2>
           <p className="text-[var(--np-text-muted)] text-[13px] max-w-sm mx-auto leading-relaxed">
-            If this is a valid PUCT docket, filings will appear here after the next crawl.
-            You can still track it above.
+            Filings will appear here after the next crawl.
+            You can still track this docket above.
           </p>
         </div>
       ) : (
