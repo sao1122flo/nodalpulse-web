@@ -591,7 +591,7 @@ export async function getMatterThreads(
         if (!primaryId) continue
         if (!linkedMap.has(primaryId)) linkedMap.set(primaryId, [])
         const existing = linkedMap.get(primaryId)!
-        if (!existing.find(d => d.id === row.linkedId)) {
+        if (!existing.find(d => d.externalId === row.externalId)) {
           existing.push({
             id:           row.linkedId,
             externalId:   row.externalId,

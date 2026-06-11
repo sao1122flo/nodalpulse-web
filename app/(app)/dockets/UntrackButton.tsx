@@ -10,9 +10,10 @@ export function UntrackButton({ docketNumber }: { docketNumber: string }) {
     <button
       type="button"
       disabled={isPending}
-      onClick={() =>
+      onClick={() => {
+        if (!confirm(`Stop tracking ${docketNumber}?`)) return
         startTransition(async () => { await untrackDocket({ docketNumber }) })
-      }
+      }}
       className="
         h-7 px-3
         rounded-[var(--np-radius-sm)]
