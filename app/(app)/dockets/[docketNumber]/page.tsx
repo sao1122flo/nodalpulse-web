@@ -7,6 +7,7 @@ import { db } from "@/db/client"
 import { userDockets, dockets, filings, extractions } from "@/db/schema"
 import { and, eq, gte, lt, desc, isNotNull, count } from "drizzle-orm"
 import { TrackButton } from "../TrackButton"
+import { PartiesPills } from "./PartiesPills"
 
 export const metadata: Metadata = { title: "Docket" }
 
@@ -124,9 +125,12 @@ export default async function DocketDetailPage({
         .limit(filterDate ? 200 : 50)
     : []
 
-  // Deduplicated parties across all filings
+  // Deduplicated parties across all filings.
+  // Strip LLM-appended role annotations like " (Intervenor, pro se)" before dedup —
+  // canonical name cleanup is services #116.
+  const normalizeParty = (name: string) => name.replace(/\s*\(.*$/, "").trim()
   const allParties = filingRows.flatMap(r => r.payload?.parties ?? [])
-  const parties = [...new Set(allParties)].sort()
+  const parties = [...new Set(allParties.map(normalizeParty))].filter(Boolean).sort()
 
   // Timeline events: deadlines + effective dates, deduped and sorted ascending
   type TimelineEvent = { date: string; description: string; type: "deadline" | "effective" }
@@ -213,21 +217,7 @@ export default async function DocketDetailPage({
               <h2 className="text-[var(--np-text-primary)] font-medium text-[13px] mb-3">
                 Parties
               </h2>
-              <div className="flex flex-wrap gap-1.5">
-                {parties.map(p => (
-                  <span
-                    key={p}
-                    className="
-                      inline-flex items-center px-2 py-0.5
-                      rounded-full text-[11px]
-                      bg-[var(--np-surface-deep)] text-[var(--np-text-body)]
-                      border border-[var(--np-border)]
-                    "
-                  >
-                    {p}
-                  </span>
-                ))}
-              </div>
+              <PartiesPills parties={parties} />
             </div>
           )}
 
