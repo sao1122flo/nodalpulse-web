@@ -8,6 +8,7 @@ import { userDockets, dockets, filings, extractions } from "@/db/schema"
 import { and, eq, gte, lt, desc, isNotNull, count } from "drizzle-orm"
 import { TrackButton } from "../TrackButton"
 import { PartiesPills } from "./PartiesPills"
+import { FilingSummary } from "./FilingSummary"
 
 export const metadata: Metadata = { title: "Docket" }
 
@@ -49,6 +50,18 @@ function docTypeLabel(t: string): string {
   return DOC_TYPE_LABELS[t] ?? t
 }
 
+function docTypeBadgeClass(t: string): string {
+  if (["puct-order", "ferc-order"].includes(t))
+    return "bg-[rgba(99,102,241,0.12)] text-[var(--np-indigo-300)] border-[rgba(99,102,241,0.25)]"
+  if (["puct-pfd", "puct-open-meeting"].includes(t))
+    return "bg-[rgba(99,102,241,0.08)] text-[var(--np-indigo-300)] border-[rgba(99,102,241,0.2)]"
+  if (["puct-compliance"].includes(t))
+    return "bg-[rgba(34,197,94,0.08)] text-[var(--np-success)] border-[rgba(34,197,94,0.2)]"
+  if (["puct-rulemaking", "ferc-tariff-amendment"].includes(t))
+    return "bg-[rgba(251,191,36,0.1)] text-[#FCD34D] border-[rgba(251,191,36,0.3)]"
+  return "bg-[var(--np-surface-deep)] text-[var(--np-text-muted)] border-[var(--np-border)]"
+}
+
 function formatDate(d: Date | string): string {
   const dt = typeof d === "string" ? new Date(d + "T12:00:00Z") : d
   return dt.toLocaleDateString("en-US", {
@@ -87,7 +100,7 @@ export default async function DocketDetailPage({
   // When multiple rows share the same external_id (cross-source duplicates), pick the one
   // with the most filings for a deterministic, content-rich result.
   const [docketRow] = await db
-    .select({ id: dockets.id, jurisdiction: dockets.jurisdiction })
+    .select({ id: dockets.id, jurisdiction: dockets.jurisdiction, title: dockets.title })
     .from(dockets)
     .leftJoin(filings, eq(filings.docketId, dockets.id))
     .where(and(eq(dockets.externalId, dn), isNotNull(dockets.jurisdiction)))
@@ -124,6 +137,16 @@ export default async function DocketDetailPage({
         .orderBy(desc(filings.filedAt))
         .limit(filterDate ? 200 : 50)
     : []
+
+  // Group filings by calendar day (filedAt is already ordered desc)
+  type FilingGroup = { date: string; items: typeof filingRows }
+  const filingGroups: FilingGroup[] = []
+  for (const f of filingRows) {
+    const d = f.filedAt.toISOString().slice(0, 10)
+    const last = filingGroups.at(-1)
+    if (last && last.date === d) last.items.push(f)
+    else filingGroups.push({ date: d, items: [f] })
+  }
 
   // Deduplicated parties across all filings.
   // Strip LLM-appended role annotations like " (Intervenor, pro se)" before dedup —
@@ -189,9 +212,9 @@ export default async function DocketDetailPage({
           <h1 className="text-[var(--np-text-primary)] text-xl font-semibold tracking-tight">
             {JURISDICTION_BADGE[docketRow.jurisdiction ?? ""] ?? docketRow.jurisdiction ?? ""} {dn}
           </h1>
-          {filingRows[0]?.title && (
+          {docketRow.title && (
             <p className="text-[var(--np-text-muted)] text-[13px] mt-0.5 max-w-lg">
-              {filingRows[0].title}
+              {docketRow.title}
             </p>
           )}
         </div>
@@ -263,7 +286,7 @@ export default async function DocketDetailPage({
               <table className="w-full text-[13px]">
                 <thead>
                   <tr className="border-b border-[var(--np-border)]">
-                    {["Date", "Type", "Title / Summary"].map(col => (
+                    {["Type", "Filing"].map(col => (
                       <th
                         key={col}
                         className="px-4 py-2.5 text-left text-[var(--np-text-muted)] text-[11px] font-medium uppercase tracking-wide"
@@ -273,67 +296,80 @@ export default async function DocketDetailPage({
                     ))}
                   </tr>
                 </thead>
-                <tbody>
-                  {filingRows.map(f => (
-                    <tr key={f.id} className="border-b border-[var(--np-border)] last:border-0">
-                      <td className="px-4 py-3 text-[var(--np-text-muted)] text-[12px] w-24 align-top">
-                        {formatDate(f.filedAt)}
+                {filingGroups.map(({ date, items }) => (
+                  <tbody key={date}>
+                    <tr className="border-b border-[var(--np-border)] bg-[var(--np-surface-deep)]">
+                      <td colSpan={2} className="px-4 py-1.5 text-[11px] font-medium text-[var(--np-text-muted)] uppercase tracking-wide">
+                        {formatDate(date)}
                       </td>
-                      <td className="px-4 py-3 text-[var(--np-text-muted)] text-[12px] w-28 align-top">
-                        {docTypeLabel(f.docType)}
-                      </td>
-                      <td className="px-4 py-3 align-top">
+                    </tr>
+                    {items.map(f => (
+                      <tr key={f.id} className="border-b border-[var(--np-border)] last:border-0">
+                        <td className="px-4 py-3 w-36 align-top">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] border ${docTypeBadgeClass(f.docType)}`}>
+                            {docTypeLabel(f.docType)}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 align-top">
+                          {f.sourceUrl ? (
+                            <a
+                              href={f.sourceUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[var(--np-text-strong)] font-medium hover:text-[var(--np-accent-text)] transition-colors"
+                            >
+                              {f.title}
+                            </a>
+                          ) : (
+                            <span className="text-[var(--np-text-strong)] font-medium">{f.title}</span>
+                          )}
+                          {f.payload?.summary && (
+                            <FilingSummary text={f.payload.summary} />
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                ))}
+              </table>
+            </div>
+
+            {/* Mobile card list */}
+            <div className="md:hidden flex flex-col gap-4">
+              {filingGroups.map(({ date, items }) => (
+                <div key={date}>
+                  <p className="text-[11px] font-medium text-[var(--np-text-muted)] uppercase tracking-wide px-1 mb-2">
+                    {formatDate(date)}
+                  </p>
+                  <div className="flex flex-col gap-2">
+                    {items.map(f => (
+                      <div
+                        key={f.id}
+                        className="rounded-[var(--np-radius-md)] border border-[var(--np-border)] bg-[var(--np-surface-elevated)] px-4 py-3"
+                      >
+                        <div className="mb-1.5">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] border ${docTypeBadgeClass(f.docType)}`}>
+                            {docTypeLabel(f.docType)}
+                          </span>
+                        </div>
                         {f.sourceUrl ? (
                           <a
                             href={f.sourceUrl}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-[var(--np-text-strong)] font-medium hover:text-[var(--np-accent-text)] transition-colors"
+                            className="text-[var(--np-text-strong)] font-medium text-[13px] hover:text-[var(--np-accent-text)] transition-colors block"
                           >
                             {f.title}
                           </a>
                         ) : (
-                          <span className="text-[var(--np-text-strong)] font-medium">{f.title}</span>
+                          <p className="text-[var(--np-text-strong)] font-medium text-[13px]">{f.title}</p>
                         )}
                         {f.payload?.summary && (
-                          <p className="text-[var(--np-text-muted)] text-[12px] mt-0.5 leading-relaxed">
-                            {f.payload.summary}
-                          </p>
+                          <FilingSummary text={f.payload.summary} />
                         )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Mobile card list */}
-            <div className="md:hidden flex flex-col gap-2">
-              {filingRows.map(f => (
-                <div
-                  key={f.id}
-                  className="rounded-[var(--np-radius-lg)] border border-[var(--np-border)] bg-[var(--np-surface-elevated)] px-4 py-3"
-                >
-                  <p className="text-[var(--np-text-muted)] text-[11px] mb-1">
-                    {formatDate(f.filedAt)} · {docTypeLabel(f.docType)}
-                  </p>
-                  {f.sourceUrl ? (
-                    <a
-                      href={f.sourceUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-[var(--np-text-strong)] font-medium text-[13px] hover:text-[var(--np-accent-text)] transition-colors block"
-                    >
-                      {f.title}
-                    </a>
-                  ) : (
-                    <p className="text-[var(--np-text-strong)] font-medium text-[13px]">{f.title}</p>
-                  )}
-                  {f.payload?.summary && (
-                    <p className="text-[var(--np-text-muted)] text-[12px] mt-1 leading-relaxed">
-                      {f.payload.summary}
-                    </p>
-                  )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ))}
             </div>
