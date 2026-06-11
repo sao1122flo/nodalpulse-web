@@ -9,22 +9,30 @@ export default function BriefFrame({ html }: { html: string }) {
     const frame = ref.current
     if (!frame) return
 
-    const syncHeight = () => {
+    const measure = () => {
       const doc = frame.contentDocument
       if (!doc?.body) return
-      const h = Math.max(doc.body.scrollHeight, doc.documentElement.scrollHeight)
+      const h = doc.documentElement.scrollHeight
       if (h > 0) frame.style.height = h + "px"
     }
 
-    const onLoad = () => {
-      syncHeight()
-      // Re-measure after paint: email layout may shift once the iframe has
-      // a real width and fonts are applied.
-      requestAnimationFrame(syncHeight)
+    // srcDoc content is available synchronously — no need to wait for load
+    measure()
+
+    // Backup: re-measure if the iframe ever reloads
+    frame.addEventListener("load", measure)
+
+    // Catch late font/image reflow inside the iframe
+    let ro: ResizeObserver | null = null
+    if (frame.contentDocument?.body) {
+      ro = new ResizeObserver(measure)
+      ro.observe(frame.contentDocument.body)
     }
 
-    frame.addEventListener("load", onLoad)
-    return () => frame.removeEventListener("load", onLoad)
+    return () => {
+      frame.removeEventListener("load", measure)
+      ro?.disconnect()
+    }
   }, [html])
 
   return (
