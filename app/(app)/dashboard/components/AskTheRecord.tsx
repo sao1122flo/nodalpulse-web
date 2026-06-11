@@ -92,7 +92,13 @@ export function AskTheRecord({ limitPerDay, usedToday }: Props) {
         <textarea
           ref={inputRef}
           value={question}
-          onChange={e => setQuestion(e.target.value)}
+          onChange={e => {
+            setQuestion(e.target.value)
+            // auto-grow: reset to auto then set to scrollHeight
+            const el = e.target
+            el.style.height = "auto"
+            el.style.height = Math.min(el.scrollHeight, 100) + "px"
+          }}
           onKeyDown={e => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault()
@@ -108,7 +114,7 @@ export function AskTheRecord({ limitPerDay, usedToday }: Props) {
           }
           disabled={isPending || blocked}
           rows={1}
-          style={{ resize: "none", minHeight: "34px", maxHeight: "100px", overflow: "auto" }}
+          style={{ resize: "none", minHeight: "34px", maxHeight: "100px", overflow: "hidden" }}
           className="
             flex-1 bg-transparent text-[13px] text-[var(--np-text-body)]
             placeholder:text-[var(--np-text-muted)]
