@@ -8,15 +8,23 @@ export default function BriefFrame({ html }: { html: string }) {
   useEffect(() => {
     const frame = ref.current
     if (!frame) return
+
     const syncHeight = () => {
       const doc = frame.contentDocument
       if (!doc?.body) return
-      // Use both body and documentElement to handle email HTML quirks
       const h = Math.max(doc.body.scrollHeight, doc.documentElement.scrollHeight)
-      frame.style.height = h + "px"
+      if (h > 0) frame.style.height = h + "px"
     }
-    frame.addEventListener("load", syncHeight)
-    return () => frame.removeEventListener("load", syncHeight)
+
+    const onLoad = () => {
+      syncHeight()
+      // Re-measure after paint: email layout may shift once the iframe has
+      // a real width and fonts are applied.
+      requestAnimationFrame(syncHeight)
+    }
+
+    frame.addEventListener("load", onLoad)
+    return () => frame.removeEventListener("load", onLoad)
   }, [html])
 
   return (
@@ -26,7 +34,7 @@ export default function BriefFrame({ html }: { html: string }) {
       // allow-same-origin: required so parent can read contentDocument.scrollHeight
       // allow-scripts intentionally omitted: email HTML needs no JS
       sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-      style={{ width: "100%", border: "none", display: "block", overflow: "hidden" }}
+      style={{ width: "100%", border: "none", display: "block", overflow: "hidden", minHeight: 400 }}
       title="Brief content"
     />
   )
