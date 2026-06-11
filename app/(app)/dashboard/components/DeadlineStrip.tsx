@@ -110,7 +110,7 @@ export function DeadlineStrip({ deadlines }: Props) {
                     </span>
                   )}
                   {dl.estimated && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-[rgba(251,191,36,0.1)] text-[#92400E] border border-[rgba(251,191,36,0.3)]">
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-[rgba(251,191,36,0.12)] text-[#FCD34D] border border-[rgba(251,191,36,0.35)]">
                       est.
                     </span>
                   )}
