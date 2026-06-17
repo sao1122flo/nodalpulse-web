@@ -64,7 +64,7 @@ export default async function PricingPage({
             Simple, transparent pricing
           </h1>
           <p className="text-[var(--np-text-muted)] text-[15px]">
-            Card required, no charge for 14 days.
+            No card required. 14-day free trial.
           </p>
           {checkoutDone && (
             <div
@@ -282,7 +282,7 @@ export default async function PricingPage({
               Start your 14-day free trial &rarr;
             </a>
             <p className="mt-2 text-[var(--np-text-muted)] text-[12px]">
-              Card required, no charge for 14 days.
+              No card required. 14-day free trial.
             </p>
           </div>
         )}

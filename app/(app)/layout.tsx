@@ -8,6 +8,7 @@ import { userProfiles } from "@/db/schema"
 import { eq } from "drizzle-orm"
 import { SignOutButton } from "./sign-out-button"
 import { MobileNav } from "./MobileNav"
+import { TrialBanner } from "./components/TrialBanner"
 
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -100,6 +101,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       {/* Main content — offset for fixed sidebar on desktop */}
       <main className="flex-1 overflow-y-auto md:ml-[220px]">
         <MobileNav userEmail={session.user.email} />
+        <div className="px-6">
+          <TrialBanner />
+        </div>
         {children}
         <footer className="border-t border-[var(--np-border)] px-6 py-4 mt-8">
           <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px] text-[var(--np-text-muted)]">

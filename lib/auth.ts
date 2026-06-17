@@ -79,6 +79,8 @@ export const auth = betterAuth({
           data: {
             ...user,
             id: toUUID(user.id),
+            // OAuth providers verify email at their end — mark as verified.
+            emailVerified: user.emailVerified ?? true,
             image: user.image?.startsWith("data:") ? null : user.image,
           },
         }),

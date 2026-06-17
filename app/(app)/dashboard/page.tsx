@@ -5,7 +5,6 @@ import Link from "next/link"
 import { auth } from "@/lib/auth"
 import { getEntitlements } from "@/lib/entitlements"
 import { getQnaUsage } from "@/lib/services-client"
-import { TrialBanner } from "@/app/(app)/components/TrialBanner"
 import {
   getTrackedDocketIds,
   getDeadlines,
@@ -99,8 +98,6 @@ export default async function DashboardPage({
 
   return (
     <div className="px-6 py-8 max-w-[1080px] mx-auto">
-      <TrialBanner />
-
       {/* ── Page header ── */}
       <div className="flex items-center justify-between mb-6 gap-4">
         <div>

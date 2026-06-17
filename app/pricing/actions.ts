@@ -62,7 +62,13 @@ export async function createTieredCheckoutSession(tier: Tier, returnPath?: strin
       : { customer_email: session.user.email }),
     client_reference_id: session.user.id,
     line_items: [{ price: priceId, quantity: 1 }],
-    subscription_data: { trial_period_days: 14 },
+    payment_method_collection: "if_required",
+    subscription_data: {
+      trial_period_days: 14,
+      trial_settings: {
+        end_behavior: { missing_payment_method: "cancel" },
+      },
+    },
     success_url: `${appUrl()}/pricing?checkout=success&tier=${tier}&return=${encodeURIComponent(safeReturn)}`,
     cancel_url:  `${appUrl()}/pricing?tier=${tier}`,
   })
