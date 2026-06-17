@@ -13,14 +13,16 @@ vi.mock("@/db/client", () => ({
 }))
 
 vi.mock("@/db/schema", () => ({
-  entitlements: { userId: "user_id", feature: "feature", value: "value", expiresAt: "expires_at" },
+  entitlements: { userId: "user_id", feature: "feature", value: "value", expiresAt: "expires_at", source: "source" },
 }))
 
 vi.mock("drizzle-orm", () => ({
-  eq: vi.fn((col: unknown, val: unknown) => ({ col, val })),
+  eq:      vi.fn((col: unknown, val: unknown) => ({ op: "eq", col, val })),
+  and:     vi.fn((...args: unknown[]) => ({ op: "and", args })),
+  inArray: vi.fn((col: unknown, vals: unknown) => ({ op: "inArray", col, vals })),
 }))
 
-import { resolveTier, TIER_ENTITLEMENTS, type Tier } from "@/lib/tiers"
+import { resolveTier, resolveAddonMarket, TIER_ENTITLEMENTS, type Tier } from "@/lib/tiers"
 import { applyTierEntitlements } from "@/lib/entitlements"
 
 // ---------------------------------------------------------------------------
@@ -63,6 +65,31 @@ describe("resolveTier", () => {
 
   it("returns null for an empty string", () => {
     expect(resolveTier("")).toBeNull()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// resolveAddonMarket
+// ---------------------------------------------------------------------------
+describe("resolveAddonMarket", () => {
+  beforeEach(() => {
+    process.env.STRIPE_PRICE_ADDON_CAISO = "price_addon_caiso_test"
+  })
+
+  afterEach(() => {
+    delete process.env.STRIPE_PRICE_ADDON_CAISO
+  })
+
+  it("resolves CAISO add-on price to 'CAISO'", () => {
+    expect(resolveAddonMarket("price_addon_caiso_test")).toBe("CAISO")
+  })
+
+  it("returns null for an unknown add-on price", () => {
+    expect(resolveAddonMarket("price_unknown")).toBeNull()
+  })
+
+  it("returns null for empty string", () => {
+    expect(resolveAddonMarket("")).toBeNull()
   })
 })
 
@@ -119,14 +146,26 @@ describe("TIER_ENTITLEMENTS", () => {
     }
   })
 
-  it("starter does not have qa entitlement", () => {
-    const features = TIER_ENTITLEMENTS.starter.map(e => e.feature)
-    expect(features).not.toContain("qa")
+  it("every tier includes qa entitlement", () => {
+    for (const tier of ALL_TIERS) {
+      const features = TIER_ENTITLEMENTS[tier].map(e => e.feature)
+      expect(features).toContain("qa")
+    }
+  })
+
+  it("org always includes all market_access rows regardless of BETA_MARKETS_FREE", () => {
+    const features = TIER_ENTITLEMENTS.org.map(e => e.feature)
+    expect(features).toContain("market_access:PUCT")
+    expect(features).toContain("market_access:ERCOT")
+    expect(features).toContain("market_access:CAISO")
+    expect(features).toContain("market_access:PJM")
   })
 })
 
 // ---------------------------------------------------------------------------
 // applyTierEntitlements — verifies DB calls per tier
+// The function now deletes only source IN ('tier','addon') rows (not all rows)
+// and inserts rows with source='tier' stamped.
 // ---------------------------------------------------------------------------
 describe("applyTierEntitlements", () => {
   function makeDeleteChain() {
@@ -155,31 +194,34 @@ describe("applyTierEntitlements", () => {
     delete process.env.STRIPE_PRICE_ORG
   })
 
-  it.each([
-    ["price_starter_test", "starter", 5]  as [string, Tier, number],
-    ["price_pro_test",     "pro",     6]  as [string, Tier, number],
-    ["price_team_test",    "team",    7]  as [string, Tier, number],
-    ["price_org_test",     "org",     9]  as [string, Tier, number],
-  ])("inserts correct entitlement count for %s (%s tier)", async (priceId, tier, expectedCount) => {
+  it("deletes source='tier'+'addon' rows and inserts tier rows with source='tier'", async () => {
     const deleteChain = makeDeleteChain()
     const insertChain = makeInsertChain()
     mockDelete.mockReturnValue(deleteChain)
     mockInsert.mockReturnValue(insertChain)
 
-    await applyTierEntitlements("user-123", priceId, null)
+    await applyTierEntitlements("user-123", "price_pro_test", null)
 
+    // Delete is called once (on entitlements table)
     expect(mockDelete).toHaveBeenCalledOnce()
     expect(deleteChain.where).toHaveBeenCalledOnce()
 
+    // Insert is called once
     expect(mockInsert).toHaveBeenCalledOnce()
     const insertedRows = (insertChain.values as ReturnType<typeof vi.fn>).mock.calls[0][0]
-    expect(insertedRows).toHaveLength(expectedCount)
-    expect(insertedRows[0]).toMatchObject({ userId: "user-123", expiresAt: null })
+
+    // Every inserted row carries source='tier'
+    for (const row of insertedRows) {
+      expect(row.source).toBe("tier")
+      expect(row.userId).toBe("user-123")
+      expect(row.expiresAt).toBeNull()
+    }
 
     const features = insertedRows.map((r: { feature: string }) => r.feature)
     expect(features).toContain("daily_brief")
     expect(features).toContain("tracked_dockets")
-    expect(TIER_ENTITLEMENTS[tier].map(e => e.feature)).toEqual(features)
+    // Features must match TIER_ENTITLEMENTS[pro]
+    expect(features).toEqual(TIER_ENTITLEMENTS.pro.map(e => e.feature))
   })
 
   it("throws for an unrecognised price ID", async () => {
@@ -203,6 +245,28 @@ describe("applyTierEntitlements", () => {
     const insertedRows = (insertChain.values as ReturnType<typeof vi.fn>).mock.calls[0][0]
     for (const row of insertedRows) {
       expect(row.expiresAt).toBe(expiry)
+    }
+  })
+
+  it("inserts the correct feature set for each tier", async () => {
+    for (const [priceEnvKey, tier] of [
+      ["price_starter_test", "starter"],
+      ["price_pro_test",     "pro"],
+      ["price_team_test",    "team"],
+      ["price_org_test",     "org"],
+    ] as [string, Tier][]) {
+      const deleteChain = makeDeleteChain()
+      const insertChain = makeInsertChain()
+      mockDelete.mockReturnValue(deleteChain)
+      mockInsert.mockReturnValue(insertChain)
+
+      await applyTierEntitlements("user-x", priceEnvKey, null)
+
+      const insertedRows = (insertChain.values as ReturnType<typeof vi.fn>).mock.calls[0][0]
+      const features = insertedRows.map((r: { feature: string }) => r.feature)
+      expect(features).toEqual(TIER_ENTITLEMENTS[tier].map(e => e.feature))
+
+      vi.clearAllMocks()
     }
   })
 })

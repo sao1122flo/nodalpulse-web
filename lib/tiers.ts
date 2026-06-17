@@ -86,6 +86,36 @@ export function resolveTier(priceId: string): Tier | null {
 }
 
 // ---------------------------------------------------------------------------
+// Market add-on SKUs
+// CAISO: live. PJM: infra ready, dark until #126 pre-GA verifications pass.
+// Each env var maps to a market code that becomes market_access:<MARKET>.
+// ---------------------------------------------------------------------------
+
+// Map market code → env var name that holds its Stripe add-on price ID.
+// PJM is intentionally commented out — add the env var and uncomment when ready.
+const ADDON_MARKET_ENV: Record<string, string> = {
+  CAISO: "STRIPE_PRICE_ADDON_CAISO",
+  // PJM: "STRIPE_PRICE_ADDON_PJM",
+}
+
+/** Returns the market code (e.g. "CAISO") if priceId is a known add-on, else null. */
+export function resolveAddonMarket(priceId: string): string | null {
+  if (!priceId) return null
+  for (const [market, envKey] of Object.entries(ADDON_MARKET_ENV)) {
+    const envVal = process.env[envKey]
+    if (envVal && envVal === priceId) return market
+  }
+  return null
+}
+
+/** Returns the configured price ID for a market add-on, or null if not configured / dark. */
+export function addonPriceId(market: string): string | null {
+  const envKey = ADDON_MARKET_ENV[market]
+  if (!envKey) return null
+  return process.env[envKey] ?? null
+}
+
+// ---------------------------------------------------------------------------
 // Display data — consumed by /pricing page; derived from TIER_ENTITLEMENTS
 // so the two cannot diverge.
 // ---------------------------------------------------------------------------
@@ -109,11 +139,18 @@ export const TIER_DISPLAY: TierDisplay[] = [
 export interface FeatureRow {
   label: string
   values: Record<"free" | Tier, string>
+  note?: string
 }
 
+// During beta all tiers carry all markets; after GA the base covers 1 market of
+// the buyer's choice and additional markets are +$39/$49/$99 add-ons.
 const _marketLabel = BETA_MARKETS_FREE
-  ? "TX + CAISO + PJM (Beta)"
-  : "Texas only"
+  ? "All markets (Beta)"
+  : "1 market of your choice"
+
+const _marketNote = BETA_MARKETS_FREE
+  ? undefined
+  : "Additional markets from $39/mo — add in-app after signup"
 
 export const FEATURE_MATRIX: FeatureRow[] = [
   {
@@ -123,6 +160,7 @@ export const FEATURE_MATRIX: FeatureRow[] = [
   {
     label: "Markets",
     values: { free: "—", starter: _marketLabel, pro: _marketLabel, team: _marketLabel, org: "All markets" },
+    note: _marketNote,
   },
   {
     label: "Tracked dockets",

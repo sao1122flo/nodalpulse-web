@@ -8,7 +8,8 @@ import { subscriptions, teamMemberships } from "@/db/schema"
 import { and, eq, ne, count } from "drizzle-orm"
 import { getEntitlements } from "@/lib/entitlements"
 import { getQnaUsage } from "@/lib/services-client"
-import { createPortalSession, listTeamMembers, listApiKeys, requestBriefExport } from "./actions"
+import { createPortalSession, listTeamMembers, listApiKeys, requestBriefExport, addCaisoAddon } from "./actions"
+import { addonPriceId } from "@/lib/tiers"
 import { listSavedSearches } from "@/app/(app)/saved-searches/actions"
 import { SavedSearchesSettings } from "./SavedSearchesSettings"
 import { TeamInviteForm } from "./TeamInviteForm"
@@ -348,6 +349,49 @@ export default async function SettingsPage({
               )}
             </div>
           </SettingsCard>
+
+          {/* Market add-ons */}
+          {sub && (sub.status === "active" || sub.status === "trialing") && (
+            <SettingsCard>
+              <SectionHeader
+                title="Market access"
+                description="Regulatory markets included in your plan."
+              />
+              <div className="flex flex-wrap gap-1.5 mb-4">
+                {ents.marketAccess.length === 0 ? (
+                  <span className="text-[var(--np-text-muted)] text-[13px]">No markets configured.</span>
+                ) : ents.marketAccess.map(m => (
+                  <span
+                    key={m}
+                    className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-[var(--np-indigo-50)] text-[#312e81] border border-[rgba(99,102,241,0.2)]"
+                  >
+                    {m === "CAISO" ? "California (CAISO)" : m === "PJM" ? "PJM Wholesale" : m === "PUCT" ? "Texas (PUCT)" : m === "ERCOT" ? "Texas (ERCOT)" : m}
+                  </span>
+                ))}
+              </div>
+              {/* CAISO add-on CTA — only shown when configured + user doesn't have it */}
+              {addonPriceId("CAISO") && !ents.marketAccess.includes("CAISO") && (
+                <div className="border-t border-[var(--np-border)] pt-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-[var(--np-text-body)] text-[13px] font-medium">Add California (CAISO)</p>
+                      <p className="text-[var(--np-text-muted)] text-[12px] mt-0.5">
+                        CPUC proceedings + CAISO market filings · billed to your existing subscription
+                      </p>
+                    </div>
+                    <form action={addCaisoAddon}>
+                      <button
+                        type="submit"
+                        className="shrink-0 h-9 px-4 rounded-[var(--np-radius-md)] border border-[var(--np-accent)] text-[var(--np-accent-text)] text-[13px] hover:bg-[var(--np-accent)] hover:text-white transition-colors cursor-pointer"
+                      >
+                        Add CAISO
+                      </button>
+                    </form>
+                  </div>
+                </div>
+              )}
+            </SettingsCard>
+          )}
 
           {/* Danger zone */}
           <div className="rounded-[var(--np-radius-lg)] border border-[rgba(239,68,68,0.25)] bg-[rgba(239,68,68,0.04)] px-5 py-5">

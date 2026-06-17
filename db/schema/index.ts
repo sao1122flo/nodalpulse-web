@@ -136,6 +136,9 @@ export const savedSearches = pgTable(
 // ---------------------------------------------------------------------------
 // entitlements
 // ---------------------------------------------------------------------------
+// source: 'tier' = written by webhook from Stripe base-tier item (recomputed on every sub event)
+//         'addon' = written by webhook from Stripe add-on subscription item (recomputed on every sub event)
+//         'beta_grandfather' = manually granted; never touched by the webhook recompute
 export const entitlements = pgTable("entitlements", {
   id: uuid("id").defaultRandom().primaryKey(),
   userId: uuid("user_id")
@@ -145,6 +148,7 @@ export const entitlements = pgTable("entitlements", {
   value: jsonb("value").$type<Record<string, unknown>>().notNull().default({}),
   expiresAt: timestamp("expires_at", { withTimezone: true }),
   grantedAt: timestamp("granted_at", { withTimezone: true }).defaultNow(),
+  source: text("source").notNull().default("tier"),
 })
 
 // ---------------------------------------------------------------------------

@@ -145,6 +145,7 @@ export async function grantMarketAccess(
       feature,
       value:     {},
       expiresAt: args.expiresAt,
+      source:    "beta_grandfather" as const,
     })),
   )
 
@@ -188,13 +189,23 @@ export async function onboardBetaUser(
 
   // 1. Entitlements: tier base (no market_access rows) + admin-selected market rows.
   //    Delete-then-insert so re-running is idempotent and cleans up old rows.
-  const baseRows = TIER_ENTITLEMENTS[args.tier].filter(e => !e.feature.startsWith("market_access:"))
-  const marketRows = args.markets.map(m => ({ feature: `market_access:${m}`, value: {} }))
+  // Base tier rows (daily_brief, tracked_dockets, etc.) tagged source='tier'.
+  // Admin-selected market rows tagged source='beta_grandfather' so the webhook
+  // recompute never overwrites them when the user eventually gets a Stripe sub.
+  const baseRows = TIER_ENTITLEMENTS[args.tier]
+    .filter(e => !e.feature.startsWith("market_access:"))
+    .map(e => ({ ...e, source: "tier" as const }))
+  const marketRows = args.markets.map(m => ({
+    feature: `market_access:${m}`,
+    value:   {} as Record<string, unknown>,
+    source:  "beta_grandfather" as const,
+  }))
   const allEntRows = [...baseRows, ...marketRows].map(e => ({
     userId:    args.userId,
     feature:   e.feature,
     value:     e.value,
     expiresAt: betaEndDate,
+    source:    e.source,
   }))
   await db.delete(entitlements).where(eq(entitlements.userId, args.userId))
   await db.insert(entitlements).values(allEntRows)

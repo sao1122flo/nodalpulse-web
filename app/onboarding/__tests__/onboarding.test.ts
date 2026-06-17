@@ -31,6 +31,7 @@ vi.mock("@/lib/entitlements", () => ({
   getEntitlements: vi.fn().mockResolvedValue({
     tier: "starter",
     dailyBrief: true,
+    marketAccess:   ["PUCT", "ERCOT"],
     trackedDockets: { limit: 5 },
     savedSearches:  { limit: 2 },
     briefHistory:   { days: 30 },
@@ -136,7 +137,7 @@ describe("createSavedSearch", () => {
     mockGetSession.mockResolvedValue({ user: { id: "u1" } })
     const { getEntitlements } = await import("@/lib/entitlements")
     vi.mocked(getEntitlements).mockResolvedValueOnce({
-      tier: null, dailyBrief: false, trackedDockets: { limit: 0 }, savedSearches: { limit: 0 },
+      tier: null, dailyBrief: false, marketAccess: [], trackedDockets: { limit: 0 }, savedSearches: { limit: 0 },
       briefHistory: { days: 0 }, qa: { limitPerDay: 0 }, teamSeats: { limit: 0 },
       auditExport: false, apiAccess: false,
     })

@@ -13,7 +13,7 @@ import { createTieredCheckoutSession, createPortalSessionFromPricing } from "./a
 export const metadata: Metadata = {
   title: "Pricing — NodalPulse",
   description:
-    "NodalPulse pricing: Starter ($49/mo), Pro ($199/mo), Team ($599/mo), Org ($1,499/mo). 14-day free trial on all paid plans.",
+    "NodalPulse pricing: Starter ($99/mo), Pro ($249/mo), Team ($749/mo), Org ($1,999/mo). 14-day free trial — no card required. One regulatory market of your choice included; add more in-app.",
 }
 
 const COLS = ["free", "starter", "pro", "team", "org"] as const
@@ -64,7 +64,11 @@ export default async function PricingPage({
             Simple, transparent pricing
           </h1>
           <p className="text-[var(--np-text-muted)] text-[15px]">
-            No card required. 14-day free trial.
+            14-day free trial · no card required · cancel anytime
+          </p>
+          <p className="text-[var(--np-text-muted)] text-[13px] mt-1">
+            If you add a card, your plan activates automatically on day&nbsp;15.
+            No card = trial ends, no charge.
           </p>
           {checkoutDone && (
             <div
@@ -236,8 +240,11 @@ export default async function PricingPage({
                   key={row.label}
                   className="group border-b border-[var(--np-border)] last:border-0 hover:bg-[var(--np-surface-elevated)]"
                 >
-                  <td className="px-5 py-3 text-[var(--np-text-body)] font-medium sticky left-0 z-10 bg-[var(--np-surface)] group-hover:bg-[var(--np-surface-elevated)]">
-                    {row.label}
+                  <td className="px-5 py-3 sticky left-0 z-10 bg-[var(--np-surface)] group-hover:bg-[var(--np-surface-elevated)]">
+                    <span className="text-[var(--np-text-body)] font-medium">{row.label}</span>
+                    {row.note && (
+                      <p className="text-[var(--np-text-muted)] text-[11px] mt-0.5">{row.note}</p>
+                    )}
                   </td>
                   {COLS.map(col => {
                     const val = row.values[col]
