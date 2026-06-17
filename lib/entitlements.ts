@@ -148,8 +148,10 @@ export async function applySubscriptionEntitlements(
     )
 
   // --- 4. Insert fresh rows ---
+  // onConflictDoNothing: if a beta_grandfather row already occupies (user_id, feature),
+  // skip the tier insert — the user retains access via the grandfather row.
   if (allRows.length > 0) {
-    await db.insert(entitlements).values(allRows)
+    await db.insert(entitlements).values(allRows).onConflictDoNothing()
   }
 }
 
