@@ -640,13 +640,78 @@ export interface DiscoveryHit {
   docType: string
 }
 
-export async function getDiscoveryHits(userId: string): Promise<DiscoveryHit[]> {
+// ---------------------------------------------------------------------------
+// getSalienceItems — market highlights this week (#128)
+// Reads market_salience (services-owned table) for markets the user can access.
+// Returns rows above SURFACE_FLOOR ordered by market, rank.
+// ---------------------------------------------------------------------------
+
+export interface SalienceItem {
+  market: string
+  rank: number
+  docketKey: string
+  docketTitle: string | null
+  score: number
+  headline: string | null
+}
+
+const SALIENCE_SURFACE_FLOOR = 100
+
+const _MARKET_ACCESS_TO_SAL_MARKETS: Record<string, string[]> = {
+  PUCT:  ["PUCT"],
+  ERCOT: ["ERCOT"],
+  CAISO: ["CAISO", "FERC"],
+  PJM:   ["PJM", "FERC"],
+}
+
+export async function getSalienceItems(
+  marketAccess: string[],
+): Promise<SalienceItem[]> {
+  const salMarkets = new Set<string>()
+  for (const m of marketAccess) {
+    for (const sm of _MARKET_ACCESS_TO_SAL_MARKETS[m] ?? []) salMarkets.add(sm)
+  }
+  const markets = [...salMarkets]
+  if (markets.length === 0) return []
+
+  try {
+    const rows = await db.execute<{
+      market:       string
+      rank:         number
+      docket_key:   string
+      docket_title: string | null
+      score:        string
+      headline:     string | null
+    }>(sql`
+      SELECT market, rank, docket_key, docket_title, score::float, headline
+      FROM market_salience
+      WHERE market = ANY(${markets})
+        AND week_start = date_trunc('week', CURRENT_DATE)::date
+        AND score >= ${SALIENCE_SURFACE_FLOOR}
+      ORDER BY market, rank
+    `)
+    return rows.map(r => ({
+      market:      r.market,
+      rank:        r.rank,
+      docketKey:   r.docket_key,
+      docketTitle: r.docket_title ?? null,
+      score:       Number(r.score),
+      headline:    r.headline ?? null,
+    }))
+  } catch {
+    return []
+  }
+}
+
+export async function getDiscoveryHits(
+  userId: string,
+): Promise<{ hits: DiscoveryHit[]; hasEntities: boolean }> {
   const entityRows = await db
     .select({ name: watchedEntities.name, aliases: watchedEntities.aliases })
     .from(watchedEntities)
     .where(eq(watchedEntities.userId, userId))
 
-  if (entityRows.length === 0) return []
+  if (entityRows.length === 0) return { hits: [], hasEntities: false }
 
   const patterns: string[] = []
   for (const row of entityRows) {
@@ -656,7 +721,7 @@ export async function getDiscoveryHits(userId: string): Promise<DiscoveryHit[]> 
       if (a) patterns.push(`%${a}%`)
     }
   }
-  if (patterns.length === 0) return []
+  if (patterns.length === 0) return { hits: [], hasEntities: false }
 
   const sinceStr = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10)
 
@@ -685,15 +750,18 @@ export async function getDiscoveryHits(userId: string): Promise<DiscoveryHit[]> 
       LIMIT 30
     `)
 
-    return rows.map(r => ({
-      accession:     r.accession,
-      description:   r.description,
-      filerNames:    r.filer_names ?? [],
-      docketNumbers: r.docket_numbers ?? [],
-      filedAt:       (r.filed_at ?? "").slice(0, 10),
-      docType:       r.doc_type,
-    }))
+    return {
+      hits: rows.map(r => ({
+        accession:     r.accession,
+        description:   r.description,
+        filerNames:    r.filer_names ?? [],
+        docketNumbers: r.docket_numbers ?? [],
+        filedAt:       (r.filed_at ?? "").slice(0, 10),
+        docType:       r.doc_type,
+      })),
+      hasEntities: true,
+    }
   } catch {
-    return []
+    return { hits: [], hasEntities: true }
   }
 }

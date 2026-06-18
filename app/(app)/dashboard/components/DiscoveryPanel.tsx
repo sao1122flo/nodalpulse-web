@@ -12,8 +12,6 @@ import { trackDocket } from "@/app/(app)/dockets/actions"
 // ---------------------------------------------------------------------------
 
 export function DiscoveryPanel({ hits }: { hits: DiscoveryHit[] }) {
-  if (hits.length === 0) return null
-
   return (
     <section>
       <div className="flex items-baseline gap-2 mb-1">
@@ -25,17 +23,28 @@ export function DiscoveryPanel({ hits }: { hits: DiscoveryHit[] }) {
       <p className="text-[12px] text-[var(--np-text-muted)] mb-4 leading-relaxed">
         Surfaced because a name you watch appears in these filings. Metadata only — track a docket for full analysis.
       </p>
-      <div className="flex flex-col gap-2">
-        {hits.map(hit => (
-          <DiscoveryHitCard key={hit.accession} hit={hit} />
-        ))}
-      </div>
-      <p className="text-[11px] text-[var(--np-text-muted)] mt-3">
-        Not seeing a filing?{" "}
-        <Link href="/settings?tab=entities" className="text-[var(--np-accent-text)] hover:underline">
-          Add more names or subsidiaries →
-        </Link>
-      </p>
+      {hits.length === 0 ? (
+        <p className="text-[13px] text-[var(--np-text-muted)] py-2">
+          No entity mentions in the last 30 days.{" "}
+          <Link href="/settings?tab=entities" className="text-[var(--np-accent-text)] hover:underline">
+            Add more names or subsidiaries →
+          </Link>
+        </p>
+      ) : (
+        <>
+          <div className="flex flex-col gap-2">
+            {hits.map(hit => (
+              <DiscoveryHitCard key={hit.accession} hit={hit} />
+            ))}
+          </div>
+          <p className="text-[11px] text-[var(--np-text-muted)] mt-3">
+            Not seeing a filing?{" "}
+            <Link href="/settings?tab=entities" className="text-[var(--np-accent-text)] hover:underline">
+              Add more names or subsidiaries →
+            </Link>
+          </p>
+        </>
+      )}
     </section>
   )
 }

@@ -13,12 +13,14 @@ import {
   getDashboardReadiness,
   jurisdictionsForMarkets,
   getDiscoveryHits,
+  getSalienceItems,
 } from "./queries"
 import { DeadlineStrip } from "./components/DeadlineStrip"
 import { WhatChangedFeed } from "./components/WhatChangedFeed"
 import { MatterThreads } from "./components/MatterThreads"
 import { AskTheRecord } from "./components/AskTheRecord"
 import { DiscoveryPanel } from "./components/DiscoveryPanel"
+import { SaliencePanel } from "./components/SaliencePanel"
 
 export const metadata: Metadata = { title: "Dashboard" }
 
@@ -91,15 +93,29 @@ export default async function DashboardPage({
   const hasDiscoveryMarket = marketAccess.some(m => DISCOVERY_GATE_MARKETS.has(m))
   const discoveryHitsPromise = hasDiscoveryMarket
     ? getDiscoveryHits(session.user.id)
-    : Promise.resolve([])
+    : Promise.resolve({ hits: [] as import("./queries").DiscoveryHit[], hasEntities: false })
+
+  // Salience panel — market highlights this week (#128)
+  const _MARKET_ACCESS_TO_SAL_MARKETS: Record<string, string[]> = {
+    PUCT:  ["PUCT"],
+    ERCOT: ["ERCOT"],
+    CAISO: ["CAISO", "FERC"],
+    PJM:   ["PJM", "FERC"],
+  }
+  const salienceMarkets = [...new Set(
+    marketAccess.flatMap(m => _MARKET_ACCESS_TO_SAL_MARKETS[m] ?? [])
+  )]
 
   // Deadlines first; threads use deadlines for the next-deadline pill.
   // Feed is independent and runs in parallel with deadlines.
-  const [deadlines, feedGroups, discoveryHits] = await Promise.all([
+  const [deadlines, feedGroups, discoveryResult, salienceItems] = await Promise.all([
     getDeadlines(docketIds, filteredJurisdictions, today),
     getRecentFeed(docketIds, filteredJurisdictions, today),
     discoveryHitsPromise,
+    getSalienceItems(marketAccess),
   ])
+  const discoveryHits = discoveryResult.hits
+  const hasDiscoveryEntities = discoveryResult.hasEntities
 
   const threadsWithDeadlines = await getMatterThreads(docketIds, filteredJurisdictions, deadlines)
 
@@ -196,9 +212,16 @@ export default async function DashboardPage({
       </div>
 
       {/* ── Discovery panel: entity mentions (rolling 30d, FERC/PJM/CAISO gate) ── */}
-      {discoveryHits.length > 0 && (
+      {hasDiscoveryMarket && hasDiscoveryEntities && (
         <div className="mb-10">
           <DiscoveryPanel hits={discoveryHits} />
+        </div>
+      )}
+
+      {/* ── Salience panel: market highlights this week (#128) ── */}
+      {salienceMarkets.length > 0 && (
+        <div className="mb-10">
+          <SaliencePanel items={salienceItems} markets={salienceMarkets} />
         </div>
       )}
 
