@@ -3,6 +3,7 @@
 import { useRef, useState, useTransition } from "react"
 import { sendQuestion } from "./actions"
 import type { QnaCitation } from "@/lib/services-client"
+import { Citation } from "@/components/Citation"
 
 interface Turn {
   question: string
@@ -39,37 +40,6 @@ function exampleQuestions(marketRoles: string[]): string[] {
   ]
 }
 
-function CitationLink({ c }: { c: QnaCitation }) {
-  return (
-    <span className="inline-flex flex-wrap items-center gap-2 text-[12px]">
-      <span className="text-[var(--np-text-muted)] font-mono">
-        {c.docket_number ? `PUCT ${c.docket_number}` : c.filing_id.slice(0, 8)}
-      </span>
-      <span className="text-[var(--np-text-muted)]">—</span>
-      <span className="text-[var(--np-text-body)] max-w-[260px] truncate">{c.title}</span>
-      <span className="flex items-center gap-1.5">
-        {c.source_url && (
-          <a
-            href={c.source_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-[var(--np-accent-text)] hover:text-[var(--np-accent-hover)] transition-colors"
-          >
-            Source →
-          </a>
-        )}
-        {c.docket_number && (
-          <a
-            href={`/dockets/${encodeURIComponent(c.docket_number)}`}
-            className="text-[var(--np-accent-text)] hover:text-[var(--np-accent-hover)] transition-colors"
-          >
-            Docket →
-          </a>
-        )}
-      </span>
-    </span>
-  )
-}
 
 export function ChatClient({ initialLimit, usedToday, marketRoles }: Props) {
   const [turns, setTurns] = useState<Turn[]>([])
@@ -214,7 +184,14 @@ export function ChatClient({ initialLimit, usedToday, marketRoles }: Props) {
                     Sources
                   </p>
                   {turn.citations.map((c) => (
-                    <CitationLink key={c.filing_id} c={c} />
+                    <div key={c.filing_id} className="flex flex-wrap items-center gap-2 text-[12px]">
+                      <Citation c={c} />
+                      {c.title && (
+                        <span className="text-[var(--np-text-body)] max-w-[320px] truncate">
+                          {c.title}
+                        </span>
+                      )}
+                    </div>
                   ))}
                 </div>
               )}

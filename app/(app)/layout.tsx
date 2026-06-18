@@ -9,6 +9,7 @@ import { eq } from "drizzle-orm"
 import { SignOutButton } from "./sign-out-button"
 import { MobileNav } from "./MobileNav"
 import { TrialBanner } from "./components/TrialBanner"
+import { AppClientShell } from "./components/AppClientShell"
 
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -128,6 +129,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </div>
         </footer>
       </main>
+      <AppClientShell />
     </div>
   )
 }

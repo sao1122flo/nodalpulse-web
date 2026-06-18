@@ -4,6 +4,7 @@ import { useRef, useState, useTransition } from "react"
 import Link from "next/link"
 import { sendQuestion } from "@/app/(app)/chat/actions"
 import type { QnaCitation } from "@/lib/services-client"
+import { Citation } from "@/components/Citation"
 
 interface Props {
   limitPerDay: number
@@ -180,39 +181,18 @@ export function AskTheRecord({ limitPerDay, usedToday }: Props) {
 
           {/* Citations */}
           {answer.citations.length > 0 && (
-            <div className="border-t border-[var(--np-border)] pt-3 space-y-2">
+            <div className="border-t border-[var(--np-border)] pt-3 space-y-1.5">
               <p className="text-[10px] font-semibold text-[var(--np-text-muted)] uppercase tracking-wider mb-1.5">
                 Sources
               </p>
               {answer.citations.map(c => (
-                <div key={c.filing_id} className="flex items-start gap-2 text-[12px]">
-                  <span className="flex-shrink-0 text-[var(--np-text-muted)] font-mono">
-                    {c.docket_number ?? c.filing_id.slice(0, 8)}
-                  </span>
-                  <span className="text-[var(--np-text-muted)]">—</span>
-                  <span className="text-[var(--np-text-body)] flex-1 min-w-0 truncate">
-                    {c.title}
-                  </span>
-                  <span className="flex-shrink-0 flex items-center gap-2">
-                    {c.source_url && (
-                      <a
-                        href={c.source_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-[var(--np-accent-text)] hover:text-[var(--np-accent-hover)] transition-colors"
-                      >
-                        source ↗
-                      </a>
-                    )}
-                    {c.docket_number && (
-                      <Link
-                        href={`/dockets/${encodeURIComponent(c.docket_number)}`}
-                        className="text-[var(--np-accent-text)] hover:text-[var(--np-accent-hover)] transition-colors"
-                      >
-                        docket →
-                      </Link>
-                    )}
-                  </span>
+                <div key={c.filing_id} className="flex flex-wrap items-center gap-2 text-[12px]">
+                  <Citation c={c} />
+                  {c.title && (
+                    <span className="text-[var(--np-text-body)] min-w-0 truncate max-w-[280px]">
+                      {c.title}
+                    </span>
+                  )}
                 </div>
               ))}
             </div>

@@ -125,7 +125,7 @@ export default async function DocketsPage() {
                           )}
                           <div className="min-w-0">
                             <Link
-                              href={`/dockets/${encodeURIComponent(d.externalId)}`}
+                              href={`?docket=${encodeURIComponent(d.externalId)}`}
                               className="font-medium text-[var(--np-text-primary)] hover:text-[var(--np-accent-text)] transition-colors block"
                             >
                               {d.externalId}
@@ -146,7 +146,7 @@ export default async function DocketsPage() {
                       <td className="px-4 py-3 align-top text-right w-36">
                         <div className="flex items-center justify-end gap-3">
                           <Link
-                            href={`/dockets/${encodeURIComponent(d.externalId)}`}
+                            href={`?docket=${encodeURIComponent(d.externalId)}`}
                             className="text-[11px] text-[var(--np-accent-text)] hover:text-[var(--np-accent-hover)] transition-colors"
                           >
                             View →
@@ -181,7 +181,7 @@ export default async function DocketsPage() {
                         </span>
                       )}
                       <Link
-                        href={`/dockets/${encodeURIComponent(d.externalId)}`}
+                        href={`?docket=${encodeURIComponent(d.externalId)}`}
                         className="text-[var(--np-text-primary)] font-medium text-[13px] hover:text-[var(--np-accent-text)] transition-colors truncate"
                       >
                         {d.externalId}
@@ -199,7 +199,7 @@ export default async function DocketsPage() {
                       </p>
                     )}
                     <Link
-                      href={`/dockets/${encodeURIComponent(d.externalId)}`}
+                      href={`?docket=${encodeURIComponent(d.externalId)}`}
                       className="text-[11px] text-[var(--np-accent-text)] hover:text-[var(--np-accent-hover)] transition-colors ml-auto"
                     >
                       View →
