@@ -41,10 +41,10 @@ export async function TrialBanner() {
 
   const daysLabel =
     daysLeft === 0
-      ? "Hoy termina tu prueba"
+      ? "Your trial ends today"
       : daysLeft === 1
-        ? "Te queda 1 día de prueba"
-        : `Te quedan ${daysLeft} días de prueba`
+        ? "1 day left in your trial"
+        : `${daysLeft} days left in your trial`
 
   return (
     <div
@@ -60,21 +60,21 @@ export async function TrialBanner() {
         <p className="text-[13px] text-[var(--np-text-body)]">
           <span className="font-medium text-[var(--np-text-strong)]">{daysLabel}</span>
           {" — "}
-          tu tarjeta se cobrará al terminar el trial.
+          your card will be charged when the trial ends.
         </p>
       ) : (
         <>
           <p className="text-[13px] text-[var(--np-text-body)]">
             <span className="font-medium text-[var(--np-text-strong)]">{daysLabel}</span>
             {" — "}
-            agregá una tarjeta para seguir recibiendo tus briefs.
+            add a card to keep receiving your daily briefs.
           </p>
           <form action={createPortalSessionFromPricing} className="flex-shrink-0">
             <button
               type="submit"
               className="text-[12px] font-medium text-[var(--np-accent-text)] hover:text-[var(--np-accent-hover)] transition-colors cursor-pointer"
             >
-              Agregar tarjeta →
+              Add a card →
             </button>
           </form>
         </>

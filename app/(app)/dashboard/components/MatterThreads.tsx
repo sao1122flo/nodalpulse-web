@@ -1,26 +1,6 @@
 import Link from "next/link"
 import type { MatterThread, DashboardDeadline } from "../queries"
-
-const JURISDICTION_BADGE: Record<string, { label: string; color: string }> = {
-  PUCT:         { label: "PUCT",  color: "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/30 dark:text-blue-300 dark:border-blue-800" },
-  ERCOT:        { label: "ERCOT", color: "bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-950/30 dark:text-orange-300 dark:border-orange-800" },
-  "CAISO-FERC": { label: "CAISO", color: "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/30 dark:text-purple-300 dark:border-purple-800" },
-  CAISO:        { label: "CAISO", color: "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/30 dark:text-purple-300 dark:border-purple-800" },
-  CPUC:         { label: "CPUC",  color: "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/30 dark:text-purple-300 dark:border-purple-800" },
-  "PJM-FERC":   { label: "PJM",   color: "bg-green-50 text-green-700 border-green-200 dark:bg-green-950/30 dark:text-green-300 dark:border-green-800" },
-  PJM:          { label: "PJM",   color: "bg-green-50 text-green-700 border-green-200 dark:bg-green-950/30 dark:text-green-300 dark:border-green-800" },
-  FERC:         { label: "FERC",  color: "bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-950/30 dark:text-slate-300 dark:border-slate-700" },
-}
-
-function JurisdictionBadge({ jurisdiction }: { jurisdiction: string | null }) {
-  if (!jurisdiction) return null
-  const cfg = JURISDICTION_BADGE[jurisdiction] ?? { label: jurisdiction, color: "bg-[var(--np-surface-deep)] text-[var(--np-text-muted)] border-[var(--np-border)]" }
-  return (
-    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border ${cfg.color}`}>
-      {cfg.label}
-    </span>
-  )
-}
+import { JurisdictionBadge } from "./JurisdictionBadge"
 
 function DeadlinePill({ dl }: { dl: DashboardDeadline }) {
   const isUrgent = dl.daysRemaining <= 7

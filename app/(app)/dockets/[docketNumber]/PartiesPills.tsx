@@ -34,7 +34,7 @@ export function PartiesPills({ parties }: { parties: string[] }) {
             hover:bg-[var(--np-surface-deep)] transition-colors
           "
         >
-          Ver todas ({parties.length})
+          Show all ({parties.length})
         </button>
       )}
     </div>

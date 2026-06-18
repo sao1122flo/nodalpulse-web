@@ -726,6 +726,12 @@ export async function getDiscoveryHits(
   const sinceStr = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10)
 
   try {
+    // Build individual ILIKE conditions rather than ILIKE ANY(array) — postgres-js
+    // does not reliably encode JS string[] as a pg text[] param in all driver versions.
+    const descConds  = patterns.map(p => sql`description ILIKE ${p}`)
+    const filerConds = patterns.map(p => sql`EXISTS (SELECT 1 FROM unnest(filer_names) AS fn WHERE fn ILIKE ${p})`)
+    const matchExpr  = [...descConds, ...filerConds].reduce((acc, cond) => sql`${acc} OR ${cond}`)
+
     const rows = await db.execute<{
       accession:      string
       description:    string
@@ -739,13 +745,7 @@ export async function getDiscoveryHits(
       FROM discovery_feed
       WHERE expires_at > NOW()
         AND filed_at >= ${sinceStr}::date
-        AND (
-          description ILIKE ANY(${patterns})
-          OR EXISTS (
-            SELECT 1 FROM unnest(filer_names) AS fn
-            WHERE fn ILIKE ANY(${patterns})
-          )
-        )
+        AND (${matchExpr})
       ORDER BY filed_at DESC
       LIMIT 30
     `)

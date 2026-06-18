@@ -211,19 +211,26 @@ export default async function DashboardPage({
         <AskTheRecord limitPerDay={qnaLimitPerDay} usedToday={qnaUsedToday} />
       </div>
 
-      {/* ── Discovery panel: entity mentions (rolling 30d, FERC/PJM/CAISO gate) ── */}
-      {hasDiscoveryMarket && hasDiscoveryEntities && (
-        <div className="mb-10">
-          <DiscoveryPanel hits={discoveryHits} />
-        </div>
-      )}
-
-      {/* ── Salience panel: market highlights this week (#128) ── */}
-      {salienceMarkets.length > 0 && (
-        <div className="mb-10">
-          <SaliencePanel items={salienceItems} markets={salienceMarkets} />
-        </div>
-      )}
+      {/* ── Mentions + Market drivers — 2-col desktop, stacked mobile ── */}
+      {(() => {
+        const showDiscovery = hasDiscoveryMarket && hasDiscoveryEntities
+        const showSalience  = salienceMarkets.length > 0
+        if (!showDiscovery && !showSalience) return null
+        return (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10 items-start">
+            {showDiscovery && (
+              <div className={!showSalience ? "md:col-span-2" : ""}>
+                <DiscoveryPanel hits={discoveryHits} />
+              </div>
+            )}
+            {showSalience && (
+              <div className={!showDiscovery ? "md:col-span-2" : ""}>
+                <SaliencePanel items={salienceItems} markets={salienceMarkets} />
+              </div>
+            )}
+          </div>
+        )
+      })()}
 
       {/* ── Empty state: no tracked dockets ── */}
       {docketIds.length === 0 && (
@@ -244,11 +251,9 @@ export default async function DashboardPage({
 
       {/* ── Preparing state: dockets tracked but backfill not yet done ── */}
       {docketIds.length > 0 && isPreparing && (
-        <div className="rounded-[var(--np-radius-lg)] border border-[var(--np-border)] bg-[var(--np-surface-elevated)] px-6 py-10 text-center">
-          <p className="text-[var(--np-text-muted)] text-[14px]">
-            Preparando tu dashboard — los filings aparecen aquí en breve.
-          </p>
-        </div>
+        <p className="text-[var(--np-text-muted)] text-[13px] py-2">
+          Preparing your dashboard — filings will appear here shortly.
+        </p>
       )}
 
       {docketIds.length > 0 && !isPreparing && (

@@ -3,6 +3,7 @@
 import { useState } from "react"
 import Link from "next/link"
 import type { DashboardDeadline } from "../queries"
+import { JurisdictionBadge } from "./JurisdictionBadge"
 
 const DEADLINE_TYPE_LABELS: Record<string, string> = {
   hearing:           "Hearing",
@@ -16,17 +17,6 @@ const DEADLINE_TYPE_LABELS: Record<string, string> = {
   implementation:    "Implementation",
   balloting:         "Balloting",
   other:             "Deadline",
-}
-
-const JURISDICTION_BADGE: Record<string, string> = {
-  PUCT:       "PUCT",
-  ERCOT:      "ERCOT",
-  "CAISO-FERC": "CAISO",
-  CAISO:      "CAISO",
-  CPUC:       "CPUC",
-  "PJM-FERC": "PJM",
-  PJM:        "PJM",
-  FERC:       "FERC",
 }
 
 function formatDate(iso: string): string {
@@ -74,9 +64,6 @@ export function DeadlineStrip({ deadlines }: Props) {
     <div className="flex flex-col gap-2">
       {visible.map((dl, i) => {
         const typeLabel = DEADLINE_TYPE_LABELS[dl.type] ?? "Deadline"
-        const jurisdictionLabel = dl.jurisdiction
-          ? (JURISDICTION_BADGE[dl.jurisdiction] ?? dl.jurisdiction)
-          : null
         const docketHref = dl.docketExternalId
           ? `/dockets/${encodeURIComponent(dl.docketExternalId)}`
           : null
@@ -104,10 +91,8 @@ export function DeadlineStrip({ deadlines }: Props) {
                   <span className="text-[11px] font-medium text-[var(--np-text-muted)] uppercase tracking-wide">
                     {typeLabel}
                   </span>
-                  {jurisdictionLabel && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--np-surface-deep)] text-[var(--np-text-muted)] border border-[var(--np-border)]">
-                      {jurisdictionLabel}
-                    </span>
+                  {dl.jurisdiction && (
+                    <JurisdictionBadge jurisdiction={dl.jurisdiction} />
                   )}
                   {dl.estimated && (
                     <span className="text-[10px] px-1.5 py-0.5 rounded bg-[rgba(251,191,36,0.12)] text-[#FCD34D] border border-[rgba(251,191,36,0.35)]">

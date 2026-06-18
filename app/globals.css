@@ -45,6 +45,26 @@
   --np-accent-fg:        #FFFFFF;
   --np-accent-fill:      var(--np-indigo-50);
   --np-accent-text:      var(--np-indigo-700);
+
+  /* Market/regulator badge tokens — light */
+  --np-mkt-ferc-text:    #64748B;
+  --np-mkt-ferc-fill:    rgba(100,116,139,0.08);
+  --np-mkt-ferc-border:  rgba(100,116,139,0.20);
+  --np-mkt-caiso-text:   #0D9488;
+  --np-mkt-caiso-fill:   rgba(13,148,136,0.08);
+  --np-mkt-caiso-border: rgba(13,148,136,0.20);
+  --np-mkt-pjm-text:     #16A34A;
+  --np-mkt-pjm-fill:     rgba(22,163,74,0.08);
+  --np-mkt-pjm-border:   rgba(22,163,74,0.20);
+  --np-mkt-puct-text:    #2563EB;
+  --np-mkt-puct-fill:    rgba(37,99,235,0.08);
+  --np-mkt-puct-border:  rgba(37,99,235,0.20);
+  --np-mkt-ercot-text:   #D97706;
+  --np-mkt-ercot-fill:   rgba(217,119,6,0.08);
+  --np-mkt-ercot-border: rgba(217,119,6,0.20);
+  --np-mkt-cpuc-text:    #9333EA;
+  --np-mkt-cpuc-fill:    rgba(147,51,234,0.08);
+  --np-mkt-cpuc-border:  rgba(147,51,234,0.20);
 }
 
 /* Dark surface (app default) */
@@ -63,6 +83,26 @@
   --np-accent-fg:        #FFFFFF;
   --np-accent-fill:      rgba(99, 102, 241, 0.12);
   --np-accent-text:      var(--np-indigo-300);
+
+  /* Market/regulator badge tokens — dark */
+  --np-mkt-ferc-text:    #94A3B8;
+  --np-mkt-ferc-fill:    rgba(148,163,184,0.12);
+  --np-mkt-ferc-border:  rgba(148,163,184,0.25);
+  --np-mkt-caiso-text:   #2DD4BF;
+  --np-mkt-caiso-fill:   rgba(45,212,191,0.10);
+  --np-mkt-caiso-border: rgba(45,212,191,0.25);
+  --np-mkt-pjm-text:     #4ADE80;
+  --np-mkt-pjm-fill:     rgba(74,222,128,0.10);
+  --np-mkt-pjm-border:   rgba(74,222,128,0.25);
+  --np-mkt-puct-text:    #60A5FA;
+  --np-mkt-puct-fill:    rgba(96,165,250,0.10);
+  --np-mkt-puct-border:  rgba(96,165,250,0.25);
+  --np-mkt-ercot-text:   #FBBF24;
+  --np-mkt-ercot-fill:   rgba(251,191,36,0.10);
+  --np-mkt-ercot-border: rgba(251,191,36,0.25);
+  --np-mkt-cpuc-text:    #C084FC;
+  --np-mkt-cpuc-fill:    rgba(192,132,252,0.10);
+  --np-mkt-cpuc-border:  rgba(192,132,252,0.25);
 }
 
 @theme inline {

@@ -1,5 +1,6 @@
 import Link from "next/link"
 import type { FeedGroup } from "../queries"
+import { JurisdictionBadge } from "./JurisdictionBadge"
 
 const DOC_TYPE_LABELS: Record<string, string> = {
   "puct-application":  "Application",
@@ -19,24 +20,20 @@ const DOC_TYPE_LABELS: Record<string, string> = {
   "pjm-filing":        "PJM Filing",
 }
 
-const JURISDICTION_BADGE: Record<string, string> = {
-  PUCT:         "PUCT",
-  ERCOT:        "ERCOT",
-  "CAISO-FERC": "CAISO",
-  CAISO:        "CAISO",
-  CPUC:         "CPUC",
-  "PJM-FERC":   "PJM",
-  PJM:          "PJM",
-  FERC:         "FERC",
-}
-
-function formatRelative(d: Date): string {
-  const diffMs = Date.now() - d.getTime()
-  const hours = Math.floor(diffMs / 3_600_000)
-  if (hours < 1) return "< 1h ago"
-  if (hours < 24) return `${hours}h ago`
-  const days = Math.floor(hours / 24)
-  return `${days}d ago`
+// Shows absolute timestamp: date + time (CT) when filing has a real time,
+// date only when filed_at is midnight UTC (date-only stored value).
+function formatTimestamp(d: Date): string {
+  const isDateOnly = d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0
+  const yr  = d.getUTCFullYear()
+  const mo  = String(d.getUTCMonth() + 1).padStart(2, "0")
+  const day = String(d.getUTCDate()).padStart(2, "0")
+  const datePart = `${yr}-${mo}-${day}`
+  if (isDateOnly) return datePart
+  const ct = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Chicago",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  }).format(d)
+  return `${datePart} ${ct} CT`
 }
 
 interface Props {
@@ -55,10 +52,7 @@ export function WhatChangedFeed({ groups }: Props) {
   return (
     <div className="flex flex-col gap-4">
       {groups.map(group => {
-        const jurisdictionLabel = group.jurisdiction
-          ? (JURISDICTION_BADGE[group.jurisdiction] ?? group.jurisdiction)
-          : null
-        const docketHref = `/dockets/${encodeURIComponent(group.docketExternalId)}`
+          const docketHref = `/dockets/${encodeURIComponent(group.docketExternalId)}`
 
         return (
           <div
@@ -68,10 +62,8 @@ export function WhatChangedFeed({ groups }: Props) {
             {/* Matter header */}
             <div className="px-4 py-3 border-b border-[var(--np-border)] flex items-center justify-between gap-3">
               <div className="flex items-center gap-2 min-w-0">
-                {jurisdictionLabel && (
-                  <span className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-[var(--np-surface-deep)] text-[var(--np-text-muted)] border border-[var(--np-border)] font-medium">
-                    {jurisdictionLabel}
-                  </span>
+                {group.jurisdiction && (
+                  <JurisdictionBadge jurisdiction={group.jurisdiction} />
                 )}
                 <Link
                   href={docketHref}
@@ -97,8 +89,8 @@ export function WhatChangedFeed({ groups }: Props) {
                           <span className="text-[11px] text-[var(--np-text-muted)] font-medium">
                             {typeLabel}
                           </span>
-                          <span className="text-[11px] text-[var(--np-text-muted)]">
-                            {formatRelative(item.filedAt)}
+                          <span className="font-mono text-[11px] text-[var(--np-text-muted)]">
+                            {formatTimestamp(item.filedAt)}
                           </span>
                         </div>
                         {item.sourceUrl ? (
