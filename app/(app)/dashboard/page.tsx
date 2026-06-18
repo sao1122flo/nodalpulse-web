@@ -12,11 +12,13 @@ import {
   getMatterThreads,
   getDashboardReadiness,
   jurisdictionsForMarkets,
+  getDiscoveryHits,
 } from "./queries"
 import { DeadlineStrip } from "./components/DeadlineStrip"
 import { WhatChangedFeed } from "./components/WhatChangedFeed"
 import { MatterThreads } from "./components/MatterThreads"
 import { AskTheRecord } from "./components/AskTheRecord"
+import { DiscoveryPanel } from "./components/DiscoveryPanel"
 
 export const metadata: Metadata = { title: "Dashboard" }
 
@@ -84,11 +86,19 @@ export default async function DashboardPage({
     Date.now() - readiness.latestTrackAt.getTime() < BACKFILL_WINDOW_MS
   )
 
+  // Discovery panel — entity mentions (FERC/PJM/CAISO markets only, rolling 30d)
+  const DISCOVERY_GATE_MARKETS = new Set(["CAISO", "PJM", "FERC", "CPUC"])
+  const hasDiscoveryMarket = marketAccess.some(m => DISCOVERY_GATE_MARKETS.has(m))
+  const discoveryHitsPromise = hasDiscoveryMarket
+    ? getDiscoveryHits(session.user.id)
+    : Promise.resolve([])
+
   // Deadlines first; threads use deadlines for the next-deadline pill.
   // Feed is independent and runs in parallel with deadlines.
-  const [deadlines, feedGroups] = await Promise.all([
+  const [deadlines, feedGroups, discoveryHits] = await Promise.all([
     getDeadlines(docketIds, filteredJurisdictions, today),
     getRecentFeed(docketIds, filteredJurisdictions, today),
+    discoveryHitsPromise,
   ])
 
   const threadsWithDeadlines = await getMatterThreads(docketIds, filteredJurisdictions, deadlines)
@@ -184,6 +194,13 @@ export default async function DashboardPage({
       <div className="mb-8">
         <AskTheRecord limitPerDay={qnaLimitPerDay} usedToday={qnaUsedToday} />
       </div>
+
+      {/* ── Discovery panel: entity mentions (rolling 30d, FERC/PJM/CAISO gate) ── */}
+      {discoveryHits.length > 0 && (
+        <div className="mb-10">
+          <DiscoveryPanel hits={discoveryHits} />
+        </div>
+      )}
 
       {/* ── Empty state: no tracked dockets ── */}
       {docketIds.length === 0 && (

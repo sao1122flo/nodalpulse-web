@@ -7,7 +7,7 @@ import { logAdminAction } from "@/lib/auth/log-admin-action"
 import { checkRateLimit } from "@/lib/admin/rate-limit"
 import { recomposeBrief, refreshDocket } from "@/lib/services-client"
 import { db } from "@/db/client"
-import { adminActions, jobs, entitlements, subscriptions, users, dockets, filings, userDockets } from "@/db/schema"
+import { adminActions, jobs, entitlements, subscriptions, users, userProfiles, dockets, filings, userDockets } from "@/db/schema"
 import { TIER_ENTITLEMENTS, type Tier } from "@/lib/tiers"
 import { jurisdictionsForMarkets } from "@/app/(app)/dashboard/queries"
 import type { Result } from "@/lib/types"
@@ -177,7 +177,7 @@ export interface OnboardBetaUserArgs {
 
 export async function onboardBetaUser(
   args: OnboardBetaUserArgs,
-): Promise<Result<{ tracked: number }>> {
+): Promise<Result<{ tracked: number; briefJobId: string | null }>> {
   const admin = await requireAdmin()
   if (!admin.ok) return { ok: false, error: "Unauthorized" }
 
@@ -236,6 +236,15 @@ export async function onboardBetaUser(
     .set({ emailVerified: true, updatedAt: new Date() })
     .where(eq(users.id, args.userId))
 
+  // 3.5. Ensure user_profiles row exists — get_user_for_brief() inner-JOINs it.
+  //      Users who skip self-serve onboarding never get this row, causing compose-brief
+  //      to silently return no_entitlement. ON CONFLICT DO NOTHING preserves any
+  //      profile the user already set via self-serve (role, tags, format).
+  await db
+    .insert(userProfiles)
+    .values({ userId: args.userId })
+    .onConflictDoNothing()
+
   // 4. Auto-track top-5 hot dockets for the granted markets.
   //    Uses jurisdictionsForMarkets (correct CAISO→CAISO-FERC mapping, fixes the
   //    JURISDICTION_TO_MARKET bug in autoTrackHotDockets self-serve path).
@@ -243,6 +252,19 @@ export async function onboardBetaUser(
   await _trackHotDockets(args.userId, args.markets, TIER_ENTITLEMENTS[args.tier]).catch(err => {
     console.error("[onboardBetaUser] _trackHotDockets failed:", err)
   })
+
+  // 5. Welcome brief — enqueued after entitlements are live so get_user_for_brief() succeeds.
+  //    Non-fatal: onboarding is complete even if the enqueue fails.
+  const briefDate = new Date().toISOString().slice(0, 10)
+  const briefResult = await recomposeBrief({
+    user_id: args.userId,
+    brief_date: briefDate,
+    idempotency_key: `onboard-brief:${args.userId}:${briefDate}`,
+  }).catch(err => {
+    console.error("[onboardBetaUser] recomposeBrief failed:", err)
+    return null
+  })
+  const briefJobId = briefResult?.ok ? briefResult.value.job_id : null
 
   const [{ ct }] = await db
     .select({ ct: count() })
@@ -253,10 +275,10 @@ export async function onboardBetaUser(
     action:     "admin.onboard_beta_user",
     targetType: "user",
     targetId:   args.userId,
-    metadata:   { markets: args.markets, tier: args.tier, betaEnd: args.betaEnd, trackedDockets: Number(ct) },
+    metadata:   { markets: args.markets, tier: args.tier, betaEnd: args.betaEnd, trackedDockets: Number(ct), briefJobId },
   })
 
-  return { ok: true, value: { tracked: Number(ct) } }
+  return { ok: true, value: { tracked: Number(ct), briefJobId } }
 }
 
 async function _trackHotDockets(

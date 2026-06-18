@@ -5,8 +5,8 @@ import { headers } from "next/headers"
 import { auth } from "@/lib/auth"
 import { stripe } from "@/lib/stripe"
 import { db } from "@/db/client"
-import { subscriptions, teamMemberships, users, apiKeys } from "@/db/schema"
-import { and, eq, isNull, ne, count } from "drizzle-orm"
+import { subscriptions, teamMemberships, users, apiKeys, watchedEntities } from "@/db/schema"
+import { and, eq, isNull, ne, count, asc } from "drizzle-orm"
 import { randomBytes, createHash } from "node:crypto"
 import { getEntitlements } from "@/lib/entitlements"
 import { sendTeamInviteEmail } from "@/lib/email"
@@ -382,6 +382,115 @@ export async function addMarketAddon(market: string): Promise<AddMarketAddonResu
 // Void wrappers for use as HTML form actions (Next.js requires void return).
 export async function addCaisoAddon(): Promise<void> {
   await addMarketAddon("CAISO")
+}
+
+// ---------------------------------------------------------------------------
+// Entity watch list (#85 Discovery)
+// Web owns writes; nodalpulse-services reads for entity-match in compose_brief.
+// ---------------------------------------------------------------------------
+
+export type EntityRecord = {
+  id: string
+  name: string
+  aliases: string[]
+  createdAt: Date
+}
+
+export async function listEntities(): Promise<EntityRecord[]> {
+  const session = await auth.api.getSession({ headers: await headers() })
+  if (!session) return []
+
+  return db
+    .select({
+      id:        watchedEntities.id,
+      name:      watchedEntities.name,
+      aliases:   watchedEntities.aliases,
+      createdAt: watchedEntities.createdAt,
+    })
+    .from(watchedEntities)
+    .where(eq(watchedEntities.userId, session.user.id))
+    .orderBy(asc(watchedEntities.createdAt))
+}
+
+export async function addEntity(
+  name: string,
+  aliases: string[],
+): Promise<{ ok: boolean; error?: string }> {
+  const session = await auth.api.getSession({ headers: await headers() })
+  if (!session) return { ok: false, error: "Not authenticated" }
+
+  const trimmed = name.trim()
+  if (!trimmed) return { ok: false, error: "Entity name is required." }
+  if (trimmed.length > 200) return { ok: false, error: "Name too long (max 200 characters)." }
+
+  const cleanAliases = aliases
+    .map(a => a.trim())
+    .filter(a => a.length > 0 && a.length <= 200)
+
+  try {
+    await db
+      .insert(watchedEntities)
+      .values({ userId: session.user.id, name: trimmed, aliases: cleanAliases })
+  } catch (e: unknown) {
+    if ((e as { code?: string }).code === "23505") {
+      return { ok: false, error: `"${trimmed}" is already in your watch list.` }
+    }
+    return { ok: false, error: "Could not save entity. Please try again." }
+  }
+
+  return { ok: true }
+}
+
+export async function updateEntityAliases(
+  id: string,
+  aliases: string[],
+): Promise<{ ok: boolean; error?: string }> {
+  const session = await auth.api.getSession({ headers: await headers() })
+  if (!session) return { ok: false, error: "Not authenticated" }
+
+  const cleanAliases = aliases
+    .map(a => a.trim())
+    .filter(a => a.length > 0 && a.length <= 200)
+
+  const [row] = await db
+    .select({ userId: watchedEntities.userId })
+    .from(watchedEntities)
+    .where(eq(watchedEntities.id, id))
+    .limit(1)
+
+  if (!row || row.userId !== session.user.id) {
+    return { ok: false, error: "Not found." }
+  }
+
+  await db
+    .update(watchedEntities)
+    .set({ aliases: cleanAliases })
+    .where(and(eq(watchedEntities.id, id), eq(watchedEntities.userId, session.user.id)))
+
+  return { ok: true }
+}
+
+export async function deleteEntity(
+  id: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const session = await auth.api.getSession({ headers: await headers() })
+  if (!session) return { ok: false, error: "Not authenticated" }
+
+  const [row] = await db
+    .select({ userId: watchedEntities.userId })
+    .from(watchedEntities)
+    .where(eq(watchedEntities.id, id))
+    .limit(1)
+
+  if (!row || row.userId !== session.user.id) {
+    return { ok: false, error: "Not found." }
+  }
+
+  await db
+    .delete(watchedEntities)
+    .where(and(eq(watchedEntities.id, id), eq(watchedEntities.userId, session.user.id)))
+
+  return { ok: true }
 }
 
 // ---------------------------------------------------------------------------

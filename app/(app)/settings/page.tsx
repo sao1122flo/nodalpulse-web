@@ -8,12 +8,13 @@ import { subscriptions, teamMemberships } from "@/db/schema"
 import { and, eq, ne, count } from "drizzle-orm"
 import { getEntitlements } from "@/lib/entitlements"
 import { getQnaUsage } from "@/lib/services-client"
-import { createPortalSession, listTeamMembers, listApiKeys, requestBriefExport, addCaisoAddon } from "./actions"
+import { createPortalSession, listTeamMembers, listApiKeys, requestBriefExport, addCaisoAddon, listEntities } from "./actions"
 import { addonPriceId } from "@/lib/tiers"
 import { listSavedSearches } from "@/app/(app)/saved-searches/actions"
 import { SavedSearchesSettings } from "./SavedSearchesSettings"
 import { TeamInviteForm } from "./TeamInviteForm"
 import { ApiKeysPanel } from "./ApiKeysPanel"
+import { EntitiesSettings } from "./EntitiesSettings"
 
 export const metadata: Metadata = { title: "Settings" }
 
@@ -70,8 +71,9 @@ function TabNav({
   showData: boolean
 }) {
   const tabs = [
-    { key: "profile", label: "Profile" },
-    { key: "billing", label: "Billing" },
+    { key: "profile",   label: "Profile" },
+    { key: "billing",   label: "Billing" },
+    { key: "entities",  label: "Entities" },
     ...(showTeam ? [{ key: "team", label: "Team" }] : []),
     ...(showApi  ? [{ key: "api",  label: "API"  }] : []),
     ...(showData ? [{ key: "data", label: "Data" }] : []),
@@ -102,7 +104,7 @@ function TabNav({
 // ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
-const VALID_TABS = ["profile", "billing", "team", "api", "data"] as const
+const VALID_TABS = ["profile", "billing", "entities", "team", "api", "data"] as const
 type Tab = typeof VALID_TABS[number]
 
 export default async function SettingsPage({
@@ -155,6 +157,9 @@ export default async function SettingsPage({
   const membersPromise =
     tab === "team" && showTeam ? listTeamMembers() : Promise.resolve([])
 
+  const entitiesPromise =
+    tab === "entities" ? listEntities() : Promise.resolve([])
+
   const apiKeysPromise =
     tab === "api" && showApi ? listApiKeys() : Promise.resolve([])
 
@@ -171,12 +176,13 @@ export default async function SettingsPage({
           )
       : Promise.resolve([{ total: 0 }])
 
-  const [subRows, savedSearchRows, qnaUsageResult, members, apiKeyRows, [usedSeatsRow]] =
+  const [subRows, savedSearchRows, qnaUsageResult, members, entityRows, apiKeyRows, [usedSeatsRow]] =
     await Promise.all([
       subPromise,
       savedSearchPromise,
       qnaUsagePromise,
       membersPromise,
+      entitiesPromise,
       apiKeysPromise,
       usedSeatsCountPromise,
     ])
@@ -411,6 +417,17 @@ export default async function SettingsPage({
             </div>
           </div>
         </>
+      )}
+
+      {/* ── Entities tab ── */}
+      {tab === "entities" && (
+        <SettingsCard>
+          <SectionHeader
+            title="Entity watch list"
+            description="Names we scan for in new FERC, PJM, and CAISO filings — surfaced in your daily brief and dashboard."
+          />
+          <EntitiesSettings initialEntities={entityRows} />
+        </SettingsCard>
       )}
 
       {/* ── Team tab ── */}

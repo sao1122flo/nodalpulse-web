@@ -304,6 +304,25 @@ export const apiKeys = pgTable("api_keys", {
   revokedAt:  timestamp("revoked_at", { withTimezone: true }),
 })
 
+// ---------------------------------------------------------------------------
+// watched_entities — per-user entity watch list for Discovery (#85)
+// Web owns writes; services reads for entity-match in compose_brief.
+// ---------------------------------------------------------------------------
+export const watchedEntities = pgTable(
+  "watched_entities",
+  {
+    id:        uuid("id").defaultRandom().primaryKey(),
+    userId:    uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    name:      text("name").notNull(),
+    aliases:   text("aliases").array().notNull().default([]),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    unique("watched_entities_user_name_unique").on(t.userId, t.name),
+    index("idx_watched_entities_user_id").on(t.userId),
+  ],
+)
+
 // READ-ONLY from nodalpulse-web.
 // Owner: nodalpulse-services. Do not write to these tables from the web app
 // except where explicitly noted (dockets above is a shared-write exception).

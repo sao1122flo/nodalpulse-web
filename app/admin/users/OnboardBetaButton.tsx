@@ -32,7 +32,9 @@ export function OnboardBetaButton({ userId }: Props) {
       betaEnd: BETA_END_ISO,
     })
     if (result.ok) {
-      setMessage(`${result.value.tracked} docket${result.value.tracked !== 1 ? "s" : ""}`)
+      const docketStr = `${result.value.tracked} docket${result.value.tracked !== 1 ? "s" : ""}`
+      const briefStr = result.value.briefJobId ? " · brief queued" : " · brief skipped"
+      setMessage(docketStr + briefStr)
       setState("done")
     } else {
       setMessage(result.error)

@@ -6,6 +6,7 @@ import {
   extractions,
   teamMemberships,
   filingDockets,
+  watchedEntities,
 } from "@/db/schema"
 import { and, eq, inArray, notInArray, desc, gte, sql, isNotNull } from "drizzle-orm"
 
@@ -621,4 +622,78 @@ export async function getMatterThreads(
     parties:       [...(partiesMap.get(d.id) ?? [])].slice(0, 8),
     linkedDockets: linkedMap.get(d.id) ?? [],
   }))
+}
+
+// ---------------------------------------------------------------------------
+// getDiscoveryHits — rolling 30-day entity mention feed (#85)
+// Queries discovery_feed (services-owned table) ILIKE-matched against the
+// user's watched_entities. Same gate-logic as compose_brief: description +
+// filer_names. Returns [] silently on any DB error.
+// ---------------------------------------------------------------------------
+
+export interface DiscoveryHit {
+  accession: string
+  description: string
+  filerNames: string[]
+  docketNumbers: string[]
+  filedAt: string
+  docType: string
+}
+
+export async function getDiscoveryHits(userId: string): Promise<DiscoveryHit[]> {
+  const entityRows = await db
+    .select({ name: watchedEntities.name, aliases: watchedEntities.aliases })
+    .from(watchedEntities)
+    .where(eq(watchedEntities.userId, userId))
+
+  if (entityRows.length === 0) return []
+
+  const patterns: string[] = []
+  for (const row of entityRows) {
+    patterns.push(`%${row.name}%`)
+    for (const alias of (row.aliases ?? [])) {
+      const a = alias.trim()
+      if (a) patterns.push(`%${a}%`)
+    }
+  }
+  if (patterns.length === 0) return []
+
+  const sinceStr = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10)
+
+  try {
+    const rows = await db.execute<{
+      accession:      string
+      description:    string
+      filer_names:    string[] | null
+      docket_numbers: string[] | null
+      filed_at:       string
+      doc_type:       string
+    }>(sql`
+      SELECT accession, description, filer_names, docket_numbers,
+             filed_at::text, doc_type
+      FROM discovery_feed
+      WHERE expires_at > NOW()
+        AND filed_at >= ${sinceStr}::date
+        AND (
+          description ILIKE ANY(${patterns})
+          OR EXISTS (
+            SELECT 1 FROM unnest(filer_names) AS fn
+            WHERE fn ILIKE ANY(${patterns})
+          )
+        )
+      ORDER BY filed_at DESC
+      LIMIT 30
+    `)
+
+    return rows.map(r => ({
+      accession:     r.accession,
+      description:   r.description,
+      filerNames:    r.filer_names ?? [],
+      docketNumbers: r.docket_numbers ?? [],
+      filedAt:       (r.filed_at ?? "").slice(0, 10),
+      docType:       r.doc_type,
+    }))
+  } catch {
+    return []
+  }
 }
