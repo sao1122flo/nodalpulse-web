@@ -54,11 +54,18 @@ export function Citation({ c }: Props) {
               {c.title}
             </span>
           )}
-          {c.relevance_note && (
+          {c.snippet ? (
+            <span className="text-[11px] text-[var(--np-text-body)] leading-relaxed italic border-l-2 border-[var(--np-accent)] pl-2">
+              &ldquo;{c.snippet}&rdquo;
+              {c.page_number && (
+                <span className="not-italic text-[var(--np-text-muted)] ml-1">p.{c.page_number}</span>
+              )}
+            </span>
+          ) : c.relevance_note ? (
             <span className="text-[11px] text-[var(--np-text-muted)] leading-relaxed">
               {c.relevance_note}
             </span>
-          )}
+          ) : null}
           <span className="flex items-center gap-3 pt-0.5 border-t border-[var(--np-border)]">
             {c.source_url && (
               <a

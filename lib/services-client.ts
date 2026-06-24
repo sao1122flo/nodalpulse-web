@@ -140,6 +140,8 @@ export interface QnaCitation {
   source_url: string | null
   docket_number: string | null
   relevance_note: string
+  snippet: string | null
+  page_number: number | null
 }
 
 export interface QnaResult {
