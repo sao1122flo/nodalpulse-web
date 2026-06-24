@@ -323,6 +323,23 @@ export const watchedEntities = pgTable(
   ],
 )
 
+// ---------------------------------------------------------------------------
+// digest_leads — public digest email subscribers (#122)
+// ---------------------------------------------------------------------------
+export const digestLeads = pgTable(
+  "digest_leads",
+  {
+    id:        uuid("id").defaultRandom().primaryKey(),
+    email:     text("email").notNull(),
+    source:    text("source").notNull().default("digest_page"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    unique("digest_leads_email_unique").on(t.email),
+    index("idx_digest_leads_created_at").on(t.createdAt),
+  ],
+)
+
 // READ-ONLY from nodalpulse-web.
 // Owner: nodalpulse-services. Do not write to these tables from the web app
 // except where explicitly noted (dockets above is a shared-write exception).

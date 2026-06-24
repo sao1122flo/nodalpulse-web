@@ -77,3 +77,25 @@ export async function sendTeamInviteEmail({
 export async function sendTestEmail(to: string) {
   return brevoSend(to, "NodalPulse — email test", "<p>Email is working.</p>")
 }
+
+export async function sendDigestSubscribeConfirmation(to: string) {
+  const html = `<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#0f1117;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0" role="presentation">
+<tr><td align="center" style="padding:48px 16px">
+<table width="100%" style="max-width:480px;background:#1a1d27;border:1px solid #2a2d3a;border-radius:8px;padding:40px 36px" cellpadding="0" cellspacing="0" role="presentation">
+<tr><td>
+<p style="margin:0 0 6px;font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#6b7280">NodalPulse</p>
+<h1 style="margin:0 0 14px;font-size:20px;font-weight:600;color:#f3f4f6;letter-spacing:-.02em">You're subscribed to the public digest</h1>
+<p style="margin:0 0 20px;font-size:14px;color:#9ca3af;line-height:1.65">You'll receive the NodalPulse public digest each weekday morning — PUCT, ERCOT, CAISO, and FERC filings, sourced and cited.</p>
+<p style="margin:0 0 28px;font-size:14px;color:#9ca3af;line-height:1.65">Want a personalized brief filtered to your exact dockets and keywords? Upgrade to a paid plan — 14-day free trial, no card required.</p>
+<a href="https://app.nodalpulse.com/signup" style="display:inline-block;background:#4f46e5;color:#fff;font-size:14px;font-weight:500;padding:11px 22px;border-radius:6px;text-decoration:none">Start your free trial →</a>
+<p style="margin:28px 0 0;font-size:12px;color:#4b5563">You subscribed at nodalpulse.com/digest. To unsubscribe, reply to this email with "unsubscribe".</p>
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body></html>`
+  await brevoSend(to, "You're subscribed to the NodalPulse daily digest", html)
+}
