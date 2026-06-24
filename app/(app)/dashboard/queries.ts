@@ -723,7 +723,7 @@ export async function getDiscoveryHits(
   }
   if (patterns.length === 0) return { hits: [], hasEntities: false }
 
-  const sinceStr = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10)
+  const sinceStr = new Date(Date.now() - 60 * 86_400_000).toISOString().slice(0, 10)
 
   try {
     // Build conditions with sql.join() — avoids deeply-nested SQL objects from reduce()

@@ -18,7 +18,7 @@ export function DiscoveryPanel({ hits }: { hits: DiscoveryHit[] }) {
         <h2 className="text-[var(--np-text-primary)] text-[15px] font-semibold">
           Mentions
         </h2>
-        <span className="text-[12px] text-[var(--np-text-muted)]">· Last 30 days</span>
+        <span className="text-[12px] text-[var(--np-text-muted)]">· Last 60 days</span>
       </div>
       {hits.length === 0 ? (
         <p className="text-[12px] text-[var(--np-text-muted)]">
