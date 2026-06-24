@@ -726,11 +726,12 @@ export async function getDiscoveryHits(
   const sinceStr = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10)
 
   try {
-    // Build individual ILIKE conditions rather than ILIKE ANY(array) — postgres-js
-    // does not reliably encode JS string[] as a pg text[] param in all driver versions.
+    // Build conditions with sql.join() — avoids deeply-nested SQL objects from reduce()
+    // which can misfire with postgres-js parameterization. ILIKE ANY(array) also skipped
+    // (postgres-js doesn't reliably encode JS string[] as pg text[] in all driver versions).
     const descConds  = patterns.map(p => sql`description ILIKE ${p}`)
     const filerConds = patterns.map(p => sql`EXISTS (SELECT 1 FROM unnest(filer_names) AS fn WHERE fn ILIKE ${p})`)
-    const matchExpr  = [...descConds, ...filerConds].reduce((acc, cond) => sql`${acc} OR ${cond}`)
+    const matchExpr  = sql.join([...descConds, ...filerConds], sql` OR `)
 
     const rows = await db.execute<{
       accession:      string

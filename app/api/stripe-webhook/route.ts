@@ -82,6 +82,20 @@ export async function POST(req: NextRequest) {
     }
 
     case "invoice.payment_failed": {
+      const invoice = event.data.object
+      // Stripe v22+: subscription moved to parent.subscription_details.subscription
+      const subRef = invoice.parent?.subscription_details?.subscription
+      const stripeSubscriptionId = typeof subRef === "string" ? subRef : null
+      if (!stripeSubscriptionId) break
+
+      // Mark past_due in our DB. Entitlements stay intact — Stripe retries per
+      // dunning schedule. Access is only revoked when customer.subscription.deleted fires.
+      await db
+        .update(subscriptions)
+        .set({ status: "past_due" })
+        .where(eq(subscriptions.stripeSubscriptionId, stripeSubscriptionId))
+
+      console.warn("[stripe-webhook] invoice.payment_failed", { stripeSubscriptionId })
       break
     }
 

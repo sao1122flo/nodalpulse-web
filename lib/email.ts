@@ -63,7 +63,7 @@ export async function sendTeamInviteEmail({
 <p style="margin:0 0 6px;font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#6b7280">NodalPulse</p>
 <h1 style="margin:0 0 14px;font-size:20px;font-weight:600;color:#f3f4f6;letter-spacing:-.02em">You've been invited</h1>
 <p style="margin:0 0 6px;font-size:14px;color:#9ca3af;line-height:1.65"><strong style="color:#d1d5db">${ownerName}</strong> (${ownerEmail}) has invited you to join their NodalPulse team.</p>
-<p style="margin:0 0 28px;font-size:14px;color:#9ca3af;line-height:1.65">NodalPulse delivers personalized regulatory briefs for ERCOT participants — PUCT, ERCOT, and FERC filings, filtered to what matters to you, every weekday at 06:00&nbsp;CT.</p>
+<p style="margin:0 0 28px;font-size:14px;color:#9ca3af;line-height:1.65">NodalPulse delivers personalized regulatory briefs for US power market participants — PUCT, ERCOT, CAISO, and FERC filings, filtered to what matters to you, every weekday at 06:00&nbsp;CT.</p>
 <a href="${acceptUrl}" style="display:inline-block;background:#4f46e5;color:#fff;font-size:14px;font-weight:500;padding:11px 22px;border-radius:6px;text-decoration:none">Accept invitation</a>
 <p style="margin:28px 0 0;font-size:12px;color:#4b5563">If you didn't expect this invitation, you can ignore this email.</p>
 </td></tr>
