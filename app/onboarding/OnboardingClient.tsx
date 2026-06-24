@@ -531,12 +531,12 @@ export function OnboardingClient({ initialStep, initialState }: Props) {
                     </svg>
                   </div>
                   <h2 className="text-[var(--np-text-primary)] font-semibold text-[15px] mb-2">
-                    {timedOut ? "Still working on it" : "Brief generation failed"}
+                    {timedOut ? "You're all set" : "Brief generation failed"}
                   </h2>
                   <p className="text-[var(--np-text-body)] text-[13px] leading-relaxed mb-4">
                     {timedOut
-                      ? "We're on it — you'll receive your brief by email within the hour."
-                      : briefError || "Something went wrong. Your brief will be retried automatically."}
+                      ? "Your dockets are being indexed — your first brief will arrive tomorrow at 6:00 AM CT."
+                      : briefError || "Something went wrong. Your first brief will arrive tomorrow at 6:00 AM CT."}
                   </p>
                   {jobId && (
                     <p className="text-[var(--np-text-muted)] text-[11px] font-mono mb-4">Job: {jobId}</p>
