@@ -655,7 +655,7 @@ export interface SalienceItem {
   headline: string | null
 }
 
-const SALIENCE_SURFACE_FLOOR = 100
+const SALIENCE_SURFACE_FLOOR = 50
 
 const _MARKET_ACCESS_TO_SAL_MARKETS: Record<string, string[]> = {
   PUCT:  ["PUCT"],
