@@ -674,6 +674,10 @@ export async function getSalienceItems(
   const markets = [...salMarkets]
   if (markets.length === 0) return []
 
+  // postgres-js expands JS arrays as tuples ($1,$2,...) not PG arrays, so
+  // ANY(${arr}) generates invalid SQL — use IN (${sql.join(...)}) instead.
+  const mkList = () => sql.join(markets.map(m => sql`${m}`), sql`, `)
+
   try {
     const rows = await db.execute<{
       market:       string
@@ -685,10 +689,10 @@ export async function getSalienceItems(
     }>(sql`
       SELECT market, rank, docket_key, docket_title, score::float, headline
       FROM market_salience
-      WHERE market = ANY(${markets})
+      WHERE market IN (${mkList()})
         AND week_start = (
           SELECT MAX(week_start) FROM market_salience
-          WHERE market = ANY(${markets})
+          WHERE market IN (${mkList()})
             AND week_start >= (CURRENT_DATE - INTERVAL '14 days')::date
         )
         AND score >= ${SALIENCE_SURFACE_FLOOR}
