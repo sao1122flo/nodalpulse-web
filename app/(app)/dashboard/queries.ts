@@ -702,7 +702,8 @@ export async function getSalienceItems(
       score:       Number(r.score),
       headline:    r.headline ?? null,
     }))
-  } catch {
+  } catch (err) {
+    console.error("[getSalienceItems] query failed:", err)
     return []
   }
 }
