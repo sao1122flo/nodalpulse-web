@@ -686,7 +686,11 @@ export async function getSalienceItems(
       SELECT market, rank, docket_key, docket_title, score::float, headline
       FROM market_salience
       WHERE market = ANY(${markets})
-        AND week_start = date_trunc('week', CURRENT_DATE)::date
+        AND week_start = (
+          SELECT MAX(week_start) FROM market_salience
+          WHERE market = ANY(${markets})
+            AND week_start >= (CURRENT_DATE - INTERVAL '14 days')::date
+        )
         AND score >= ${SALIENCE_SURFACE_FLOOR}
       ORDER BY market, rank
     `)
