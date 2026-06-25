@@ -688,11 +688,11 @@ export async function getSalienceItems(
       headline:     string | null
     }>(sql`
       SELECT market, rank, docket_key, docket_title, score::float, headline
-      FROM market_salience
+      FROM market_salience ms
       WHERE market IN (${mkList()})
         AND week_start = (
           SELECT MAX(week_start) FROM market_salience
-          WHERE market IN (${mkList()})
+          WHERE market = ms.market
             AND week_start >= (CURRENT_DATE - INTERVAL '14 days')::date
         )
         AND score >= ${SALIENCE_SURFACE_FLOOR}
