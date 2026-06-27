@@ -112,6 +112,7 @@ export function DocketSidePanel() {
   const [data,    setData]    = useState<DocketData | null>(null)
   const [loading, setLoading] = useState(false)
   const [errored, setErrored] = useState(false)
+  const [showAllParties, setShowAllParties] = useState(false)
 
   // Track the last fetched param to avoid duplicate fetches
   const lastFetched = useRef<string | null>(null)
@@ -243,25 +244,6 @@ export function DocketSidePanel() {
 
           {data && !loading && (
             <>
-              {/* Parties */}
-              {data.parties.length > 0 && (
-                <div>
-                  <h2 className="text-[11px] font-semibold text-[var(--np-text-muted)] uppercase tracking-wider mb-2">
-                    Parties
-                  </h2>
-                  <div className="flex flex-wrap gap-1.5">
-                    {data.parties.map(p => (
-                      <span
-                        key={p}
-                        className="text-[11px] px-2 py-0.5 rounded-full bg-[var(--np-surface-deep)] text-[var(--np-text-body)] border border-[var(--np-border)]"
-                      >
-                        {p}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
               {/* Key dates */}
               {data.timeline.length > 0 && (
                 <div>
@@ -337,6 +319,36 @@ export function DocketSidePanel() {
 
               {data.filings.length === 0 && (
                 <p className="text-[13px] text-[var(--np-text-muted)]">No filings found.</p>
+              )}
+
+              {/* Parties — moved below the actionable content and collapsed */}
+              {data.parties.length > 0 && (
+                <div>
+                  <h2 className="text-[11px] font-semibold text-[var(--np-text-muted)] uppercase tracking-wider mb-2">
+                    Parties{" "}
+                    <span className="font-normal normal-case text-[var(--np-text-muted)]">
+                      ({data.parties.length})
+                    </span>
+                  </h2>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(showAllParties ? data.parties : data.parties.slice(0, 10)).map(p => (
+                      <span
+                        key={p}
+                        className="text-[11px] px-2 py-0.5 rounded-full bg-[var(--np-surface-deep)] text-[var(--np-text-body)] border border-[var(--np-border)]"
+                      >
+                        {p}
+                      </span>
+                    ))}
+                    {!showAllParties && data.parties.length > 10 && (
+                      <button
+                        onClick={() => setShowAllParties(true)}
+                        className="text-[11px] px-2 py-0.5 rounded-full text-[var(--np-accent-text)] border border-[var(--np-border)] hover:bg-[var(--np-surface-deep)] transition-colors cursor-pointer"
+                      >
+                        Show all ({data.parties.length})
+                      </button>
+                    )}
+                  </div>
+                </div>
               )}
             </>
           )}

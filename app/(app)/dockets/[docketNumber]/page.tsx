@@ -3,388 +3,359 @@ import { redirect, notFound } from "next/navigation"
 import { headers } from "next/headers"
 import Link from "next/link"
 import { auth } from "@/lib/auth"
-import { db } from "@/db/client"
-import { userDockets, dockets, filings, extractions } from "@/db/schema"
-import { and, eq, gte, lt, desc, isNotNull, count } from "drizzle-orm"
+import { getEntitlements } from "@/lib/entitlements"
+import { getQnaUsage } from "@/lib/services-client"
+import { JURISDICTION_TO_MARKET } from "@/app/(app)/dashboard/queries"
+import {
+  JurisdictionBadge,
+  jurisdictionLabel,
+  jurisdictionStyle,
+} from "@/app/(app)/dashboard/components/JurisdictionBadge"
+import { AskTheRecord } from "@/app/(app)/dashboard/components/AskTheRecord"
 import { TrackButton } from "../TrackButton"
-import { PartiesPills } from "./PartiesPills"
-import { FilingSummary } from "./FilingSummary"
+import { FilingTimeline } from "./FilingTimeline"
+import { RecordDeadlines } from "./RecordDeadlines"
+import { KeyParties } from "./KeyParties"
+import {
+  resolveDocket,
+  getDocketMeta,
+  getDocketFilingsPage,
+  getDocketParties,
+  getDocketDeadlines,
+  getLinkedDockets,
+  getDocketSalience,
+  isDocketTracked,
+} from "./queries"
 
 export const metadata: Metadata = { title: "Docket" }
 
-const JURISDICTION_BADGE: Record<string, string> = {
-  PUCT:         "PUCT",
-  ERCOT:        "ERCOT",
-  "CAISO-FERC": "CAISO",
-  CAISO:        "CAISO",
-  CPUC:         "CPUC",
-  "PJM-FERC":   "PJM",
-  PJM:          "PJM",
-  FERC:         "FERC",
+const FILINGS_DEFAULT = 40
+const FILINGS_ALL     = 300
+
+// Market code → region label, so a PUCT docket reads "Texas · PUCT".
+const MARKET_REGION: Record<string, string> = {
+  PUCT: "Texas", ERCOT: "Texas", CAISO: "California", PJM: "PJM", FERC: "FERC",
 }
 
-const DOC_TYPE_LABELS: Record<string, string> = {
-  // PUCT
-  "puct-application":      "Application",
-  "puct-order":            "Order",
-  "puct-pfd":              "Proposal for Decision",
-  "puct-response":         "Response",
-  "puct-compliance":       "Compliance Filing",
-  "puct-rulemaking":       "Rulemaking",
-  "puct-open-meeting":     "Open Meeting",
-  "puct-filing":           "Filing",
-  // FERC / PJM-FERC
-  "ferc-order":            "Order",
-  "ferc-tariff-amendment": "Tariff Amendment",
-  "pjm-filing":            "Filing",
-  // CAISO / CPUC
-  "caiso-filing":          "Filing",
-  "cpuc-filing":           "Filing",
-  // ERCOT
-  "ercot-nprr":            "NPRR",
-  "ercot-pgrr":            "PGRR",
-  "ercot-mn":              "Market Notice",
+function marketPillLabel(jurisdiction: string | null): string | null {
+  if (!jurisdiction) return null
+  const mkt = JURISDICTION_TO_MARKET[jurisdiction] ?? null
+  if (!mkt) return jurisdictionLabel(jurisdiction)
+  const region = MARKET_REGION[mkt] ?? mkt
+  const label = jurisdictionLabel(jurisdiction)
+  return region === label ? label : `${region} · ${label}`
 }
 
-function docTypeLabel(t: string): string {
-  return DOC_TYPE_LABELS[t] ?? t
-}
-
-function docTypeBadgeClass(t: string): string {
-  if (["puct-order", "ferc-order"].includes(t))
-    return "bg-[rgba(99,102,241,0.12)] text-[var(--np-indigo-300)] border-[rgba(99,102,241,0.25)]"
-  if (["puct-pfd", "puct-open-meeting"].includes(t))
-    return "bg-[rgba(99,102,241,0.08)] text-[var(--np-indigo-300)] border-[rgba(99,102,241,0.2)]"
-  if (["puct-compliance"].includes(t))
-    return "bg-[rgba(34,197,94,0.08)] text-[var(--np-success)] border-[rgba(34,197,94,0.2)]"
-  if (["puct-rulemaking", "ferc-tariff-amendment"].includes(t))
-    return "bg-[rgba(251,191,36,0.1)] text-[#FCD34D] border-[rgba(251,191,36,0.3)]"
-  return "bg-[var(--np-surface-deep)] text-[var(--np-text-muted)] border-[var(--np-border)]"
-}
-
-function formatDate(d: Date | string): string {
+function formatDate(d: Date | string | null): string {
+  if (!d) return "—"
   const dt = typeof d === "string" ? new Date(d + "T12:00:00Z") : d
-  return dt.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    timeZone: "UTC",
-  })
+  return dt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })
 }
 
-export default async function DocketDetailPage({
+function timeAgo(d: Date | null): string {
+  if (!d) return "—"
+  const days = Math.floor((Date.now() - d.getTime()) / 86_400_000)
+  if (days <= 0) return "today"
+  if (days === 1) return "yesterday"
+  if (days < 30) return `${days} days ago`
+  const months = Math.floor(days / 30)
+  if (months < 12) return `${months} month${months > 1 ? "s" : ""} ago`
+  const years = Math.floor(days / 365)
+  return `${years} year${years > 1 ? "s" : ""} ago`
+}
+
+function StatusPill({ status }: { status: string }) {
+  const isClosed = status === "closed"
+  const label = isClosed ? "Closed" : status === "open" ? "Active" : status
+  return (
+    <span
+      className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium border ${
+        isClosed
+          ? "bg-[var(--np-surface-deep)] text-[var(--np-text-muted)] border-[var(--np-border)]"
+          : "bg-[var(--np-accent-fill)] text-[var(--np-accent-text)] border-[rgba(99,102,241,0.25)]"
+      }`}
+    >
+      {label}
+    </span>
+  )
+}
+
+function RecordHeader({
+  externalId, jurisdiction, status, title, meta, track,
+}: {
+  externalId: string
+  jurisdiction: string | null
+  status: string
+  title: string | null
+  meta: string
+  track: React.ReactNode
+}) {
+  const pill = marketPillLabel(jurisdiction)
+  const dot = jurisdiction ? jurisdictionStyle(jurisdiction).color as string : undefined
+  return (
+    <>
+      {/* Breadcrumb */}
+      <nav className="mb-4 text-[13px] text-[var(--np-text-muted)]">
+        <Link href="/dockets" className="hover:text-[var(--np-text-body)] transition-colors">Dockets</Link>
+        <span className="mx-1.5" aria-hidden="true">/</span>
+        <span className="text-[var(--np-text-body)]">
+          {jurisdiction ? `${jurisdictionLabel(jurisdiction)} ` : ""}{externalId}
+        </span>
+      </nav>
+
+      <div className="flex items-start justify-between gap-4 mb-6">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2.5 mb-1.5">
+            <h1 className="text-[var(--np-text-primary)] text-2xl font-semibold tracking-tight">
+              {jurisdiction ? `${jurisdictionLabel(jurisdiction)} ` : ""}{externalId}
+            </h1>
+            {pill && (
+              <span
+                className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[12px] font-medium border"
+                style={jurisdiction ? jurisdictionStyle(jurisdiction) : undefined}
+              >
+                <span className="w-1.5 h-1.5 rounded-full" style={{ background: dot }} aria-hidden="true" />
+                {pill}
+              </span>
+            )}
+            <StatusPill status={status} />
+          </div>
+          {title && (
+            <p className="text-[var(--np-text-body)] text-[14px] mt-0.5 max-w-2xl leading-snug">{title}</p>
+          )}
+          <p className="text-[var(--np-text-muted)] text-[12px] mt-2">{meta}</p>
+        </div>
+        <div className="flex flex-col items-stretch gap-2 flex-shrink-0">
+          {track}
+          {/* Export — stub, wired in a follow-up */}
+          <button
+            type="button"
+            disabled
+            title="Export coming soon"
+            className="px-3 py-1.5 rounded-[var(--np-radius-md)] border border-[var(--np-border)] text-[12px] text-[var(--np-text-muted)] opacity-50 cursor-not-allowed text-center"
+          >
+            Export brief
+          </button>
+        </div>
+      </div>
+    </>
+  )
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <h2 className="text-[11px] font-semibold text-[var(--np-text-muted)] uppercase tracking-[0.06em] mb-3">
+      {children}
+    </h2>
+  )
+}
+
+export default async function DocketRecordPage({
   params,
   searchParams,
 }: {
-  params: Promise<{ docketNumber: string }>
-  searchParams: Promise<{ date?: string }>
+  params:       Promise<{ docketNumber: string }>
+  searchParams: Promise<{ filings?: string }>
 }) {
   const { docketNumber } = await params
-  const { date: dateParam } = await searchParams
+  const { filings: filingsParam } = await searchParams
   const dn = decodeURIComponent(docketNumber)
-
-  // Validate optional ?date=YYYY-MM-DD param; ignore if malformed
-  const filterDate = dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)
-    ? dateParam
-    : null
-
-  const filterDateStart = filterDate ? new Date(filterDate + "T00:00:00Z") : null
-  const filterDateEnd   = filterDate
-    ? new Date(new Date(filterDate + "T00:00:00Z").getTime() + 86_400_000)
-    : null
+  const showAllFilings = filingsParam === "all"
 
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session) redirect("/login")
 
-  // Look up the docket row — any jurisdiction, excluding ghost rows (jurisdiction IS NULL).
-  // When multiple rows share the same external_id (cross-source duplicates), pick the one
-  // with the most filings for a deterministic, content-rich result.
-  const [docketRow] = await db
-    .select({ id: dockets.id, jurisdiction: dockets.jurisdiction, title: dockets.title })
-    .from(dockets)
-    .leftJoin(filings, eq(filings.docketId, dockets.id))
-    .where(and(eq(dockets.externalId, dn), isNotNull(dockets.jurisdiction)))
-    .groupBy(dockets.id, dockets.jurisdiction)
-    .orderBy(desc(count(filings.id)))
-    .limit(1)
+  const docket = await resolveDocket(dn)
+  if (!docket) notFound()
 
-  if (!docketRow) notFound()
+  const [ents, meta] = await Promise.all([
+    getEntitlements(session.user.id),
+    getDocketMeta(docket.id),
+  ])
 
-  // All filings for this docket, with extraction payload where available.
-  // When ?date=YYYY-MM-DD is present, filter to that day only.
-  const filingRows = docketRow
-    ? await db
-        .select({
-          id:        filings.id,
-          title:     filings.title,
-          docType:   filings.docType,
-          filedAt:   filings.filedAt,
-          sourceUrl: filings.sourceUrl,
-          filer:     filings.filer,
-          payload:   extractions.payload,
-        })
-        .from(filings)
-        .leftJoin(extractions, eq(extractions.filingId, filings.id))
-        .where(
-          filterDate && filterDateStart && filterDateEnd
-            ? and(
-                eq(filings.docketId, docketRow.id),
-                gte(filings.filedAt, filterDateStart),
-                lt(filings.filedAt,  filterDateEnd),
-              )
-            : eq(filings.docketId, docketRow.id)
-        )
-        .orderBy(desc(filings.filedAt))
-        .limit(filterDate ? 200 : 50)
-    : []
+  const market = JURISDICTION_TO_MARKET[docket.jurisdiction ?? ""] ?? null
+  const hasMarketAccess = !!market && ents.marketAccess.includes(market)
 
-  // Group filings by calendar day (filedAt is already ordered desc)
-  type FilingGroup = { date: string; items: typeof filingRows }
-  const filingGroups: FilingGroup[] = []
-  for (const f of filingRows) {
-    const d = f.filedAt.toISOString().slice(0, 10)
-    const last = filingGroups.at(-1)
-    if (last && last.date === d) last.items.push(f)
-    else filingGroups.push({ date: d, items: [f] })
+  const gateMeta = [
+    `${meta.filingCount} filing${meta.filingCount === 1 ? "" : "s"}`,
+    meta.lastFiledAt ? `last activity ${timeAgo(meta.lastFiledAt)}` : null,
+  ].filter(Boolean).join(" · ")
+
+  // ── Gate 1: market not in plan ────────────────────────────────────────────
+  if (!hasMarketAccess) {
+    return (
+      <div className="px-6 md:px-8 py-8 max-w-3xl">
+        <RecordHeader externalId={dn} jurisdiction={docket.jurisdiction} status={docket.status} title={docket.title} meta={gateMeta} track={null} />
+        <GateCard
+          heading="This market isn't in your plan"
+          body={`${market ? `${market} ` : ""}coverage is available on a higher tier. Upgrade to track this proceeding and open its full record.`}
+          ctaHref="/pricing"
+          ctaLabel="See plans →"
+        />
+      </div>
+    )
   }
 
-  // Deduplicated parties across all filings.
-  // Strip LLM-appended role annotations like " (Intervenor, pro se)" before dedup —
-  // canonical name cleanup is services #116.
-  const normalizeParty = (name: string) => name.replace(/\s*\(.*$/, "").trim()
-  const allParties = filingRows.flatMap(r => r.payload?.parties ?? [])
-  const parties = [...new Set(allParties.map(normalizeParty))].filter(Boolean).sort()
+  const tracked = await isDocketTracked(session.user.id, docket.id)
 
-  // Timeline events: deadlines + effective dates, deduped and sorted ascending
-  type TimelineEvent = { date: string; description: string; type: "deadline" | "effective" }
-  const rawTimeline: TimelineEvent[] = []
-  for (const row of filingRows) {
-    for (const d of row.payload?.deadlines ?? []) {
-      if (d.date) rawTimeline.push({ date: d.date, description: d.description, type: "deadline" })
-    }
-    if (row.payload?.effective_date) {
-      rawTimeline.push({
-        date: row.payload.effective_date,
-        description: `Effective — ${row.title}`,
-        type: "effective",
-      })
-    }
+  // ── Gate 2: not tracked ───────────────────────────────────────────────────
+  if (!tracked) {
+    return (
+      <div className="px-6 md:px-8 py-8 max-w-3xl">
+        <RecordHeader externalId={dn} jurisdiction={docket.jurisdiction} status={docket.status} title={docket.title} meta={gateMeta} track={<TrackButton docketNumber={dn} isTracked={false} />} />
+        <GateCard
+          heading="Track to see the full record"
+          body="Tracking assembles deadlines, the filing timeline, cross-jurisdiction links and scoped Q&A for this proceeding — and folds it into your daily brief."
+        />
+      </div>
+    )
   }
-  const seen = new Set<string>()
-  const timeline = rawTimeline
-    .filter(e => {
-      const k = `${e.date}:${e.description}`
-      if (seen.has(k)) return false
-      seen.add(k)
-      return true
-    })
-    .sort((a, b) => a.date.localeCompare(b.date))
 
-  // Tracking state — docketRow already found above, no need to re-join dockets
-  const [trackRecord] = docketRow
-    ? await db
-        .select({ id: userDockets.id })
-        .from(userDockets)
-        .where(and(
-          eq(userDockets.userId, session.user.id),
-          eq(userDockets.docketId, docketRow.id),
-        ))
-        .limit(1)
-    : [undefined]
+  // ── Full record ───────────────────────────────────────────────────────────
+  const today = new Date().toISOString().slice(0, 10)
+  const filingLimit = showAllFilings ? FILINGS_ALL : FILINGS_DEFAULT
 
-  const isTracked = !!trackRecord
+  const [filings, parties, deadlines, linkedDockets, salience, qnaUsage] = await Promise.all([
+    getDocketFilingsPage(docket.id, filingLimit),
+    getDocketParties(docket.id),
+    getDocketDeadlines(docket.id, today),
+    getLinkedDockets(docket.id),
+    getDocketSalience(docket.externalId),
+    getQnaUsage(session.user.id),
+  ])
+
+  const qnaLimitPerDay = ents.qa.limitPerDay ?? 0
+  const qnaUsedToday   = qnaUsage.ok ? qnaUsage.value.used_today : 0
+
+  const metaLine = [
+    `${parties.length} part${parties.length === 1 ? "y" : "ies"}`,
+    `${meta.filingCount} filing${meta.filingCount === 1 ? "" : "s"}`,
+    meta.lastFiledAt ? `last activity ${timeAgo(meta.lastFiledAt)}` : null,
+  ].filter(Boolean).join(" · ")
+
+  const suggestedQuestions = [
+    `What's the latest in ${dn}?`,
+    `What are the upcoming deadlines in ${dn}?`,
+    `Who are the main parties in ${dn}?`,
+  ]
 
   return (
-    <div className="px-8 py-8 max-w-3xl">
-      {/* Back link */}
-      <div className="mb-5">
-        <Link
-          href="/dockets"
-          className="text-[var(--np-text-muted)] text-[13px] hover:text-[var(--np-text-body)] transition-colors"
-        >
-          &larr; Dockets
-        </Link>
-      </div>
+    <div className="px-6 md:px-8 py-8 max-w-[1120px]">
+      <RecordHeader
+        externalId={dn}
+        jurisdiction={docket.jurisdiction}
+        status={docket.status}
+        title={docket.title}
+        meta={metaLine}
+        track={<TrackButton docketNumber={dn} isTracked={true} />}
+      />
 
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4 mb-6">
-        <div>
-          <h1 className="text-[var(--np-text-primary)] text-xl font-semibold tracking-tight">
-            {JURISDICTION_BADGE[docketRow.jurisdiction ?? ""] ?? docketRow.jurisdiction ?? ""} {dn}
-          </h1>
-          {docketRow.title && (
-            <p className="text-[var(--np-text-muted)] text-[13px] mt-0.5 max-w-lg">
-              {docketRow.title}
-            </p>
-          )}
-        </div>
-        <TrackButton docketNumber={dn} isTracked={isTracked} />
-      </div>
-
-      {filingRows.length === 0 ? (
-        <div className="rounded-[var(--np-radius-lg)] border border-[var(--np-border)] bg-[var(--np-surface-elevated)] px-8 py-12 text-center">
-          <h2 className="text-[var(--np-text-strong)] font-medium text-[14px] mb-2">
-            No filings found for docket {dn}
-          </h2>
-          <p className="text-[var(--np-text-muted)] text-[13px] max-w-sm mx-auto leading-relaxed">
-            Filings will appear here after the next crawl.
-            You can still track this docket above.
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-6">
-
-          {/* Parties */}
-          {parties.length > 0 && (
-            <div className="rounded-[var(--np-radius-lg)] border border-[var(--np-border)] bg-[var(--np-surface-elevated)] px-5 py-4">
-              <h2 className="text-[var(--np-text-primary)] font-medium text-[13px] mb-3">
-                Parties
-              </h2>
-              <PartiesPills parties={parties} />
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px] gap-8 items-start">
+        {/* ── Main column ── */}
+        <div className="flex flex-col gap-8 min-w-0">
+          {/* What's driving this docket (salience #128) — hero, hidden when no signal */}
+          {salience && (
+            <div className="rounded-[var(--np-radius-lg)] border border-[var(--np-border)] border-l-2 border-l-[var(--np-success)] bg-[var(--np-surface-elevated)] px-5 py-4">
+              <div className="flex items-center justify-between gap-3 mb-2">
+                <h2 className="flex items-center gap-2 text-[14px] font-semibold text-[var(--np-text-primary)]">
+                  <span className="text-[var(--np-success)]" aria-hidden="true">↗</span>
+                  What&rsquo;s driving this docket
+                </h2>
+                <span className="text-[11px] px-2 py-0.5 rounded-full bg-[rgba(34,197,94,0.10)] text-[var(--np-success)] border border-[rgba(34,197,94,0.30)] flex-shrink-0">
+                  Salience {Math.round(salience.score)}
+                </span>
+              </div>
+              <p className="text-[13px] text-[var(--np-text-body)] leading-relaxed">
+                {salience.headline ?? `Active this week in ${jurisdictionLabel(docket.jurisdiction ?? salience.market)}.`}
+              </p>
             </div>
           )}
 
-          {/* Timeline */}
-          {timeline.length > 0 && (
-            <div className="rounded-[var(--np-radius-lg)] border border-[var(--np-border)] bg-[var(--np-surface-elevated)] px-5 py-4">
-              <h2 className="text-[var(--np-text-primary)] font-medium text-[13px] mb-3">
-                Key dates
+          {/* Upcoming deadlines (P0) — hidden when none */}
+          {deadlines.length > 0 && (
+            <section>
+              <SectionLabel>Upcoming deadlines</SectionLabel>
+              <RecordDeadlines docketNumber={dn} deadlines={deadlines} />
+            </section>
+          )}
+
+          {/* Filing timeline */}
+          <section>
+            <SectionLabel>Filing timeline</SectionLabel>
+            <FilingTimeline
+              filings={filings}
+              total={meta.filingCount}
+              viewAllHref={showAllFilings ? null : `/dockets/${encodeURIComponent(dn)}?filings=all`}
+            />
+          </section>
+        </div>
+
+        {/* ── Right rail (stacks below main on mobile) ── */}
+        <aside className="flex flex-col gap-6 min-w-0">
+          {/* Linked across jurisdictions — hidden when none */}
+          {linkedDockets.length > 0 && (
+            <div className="rounded-[var(--np-radius-lg)] border border-[var(--np-accent)] bg-[var(--np-surface-elevated)] px-5 py-4">
+              <h2 className="flex items-center gap-2 text-[13px] font-semibold text-[var(--np-text-primary)] mb-3">
+                <span className="text-[var(--np-accent-text)]" aria-hidden="true">⇄</span>
+                Linked across jurisdictions
               </h2>
-              <div className="space-y-2">
-                {timeline.map((e, i) => (
-                  <div key={i} className="flex items-start gap-3 text-[13px]">
-                    <span className="text-[var(--np-text-muted)] text-[12px] w-24 shrink-0 pt-px">
-                      {formatDate(e.date)}
-                    </span>
+              <div className="flex flex-col gap-3">
+                {linkedDockets.map(ld => (
+                  <Link key={ld.id} href={`/dockets/${encodeURIComponent(ld.externalId)}`} className="flex items-start gap-2 group">
                     <span
-                      className={
-                        e.type === "deadline"
-                          ? "text-[var(--np-deadline)] leading-relaxed"
-                          : "text-[var(--np-text-body)] leading-relaxed"
-                      }
-                    >
-                      {e.description}
+                      className="mt-1.5 w-1.5 h-1.5 rounded-full flex-shrink-0"
+                      style={{ background: ld.jurisdiction ? (jurisdictionStyle(ld.jurisdiction).color as string) : "var(--np-text-muted)" }}
+                      aria-hidden="true"
+                    />
+                    <span className="min-w-0">
+                      <span className="block text-[13px] font-medium text-[var(--np-text-strong)] group-hover:text-[var(--np-accent-text)] transition-colors">
+                        {ld.jurisdiction ? `${jurisdictionLabel(ld.jurisdiction)} ` : ""}{ld.externalId}
+                      </span>
+                      {ld.title && (
+                        <span className="block text-[12px] text-[var(--np-text-muted)] leading-snug">{ld.title}</span>
+                      )}
                     </span>
-                  </div>
+                  </Link>
                 ))}
               </div>
             </div>
           )}
 
-          {/* Filings */}
+          {/* Key parties */}
+          {parties.length > 0 && (
+            <div className="rounded-[var(--np-radius-lg)] border border-[var(--np-border)] bg-[var(--np-surface-elevated)] px-5 py-4">
+              <SectionLabel>Key parties</SectionLabel>
+              <KeyParties parties={parties} />
+            </div>
+          )}
+
+          {/* Ask the record */}
           <div>
-            <h2 className="text-[var(--np-text-primary)] font-medium text-[13px] mb-3">
-              {filterDate
-                ? `Filings — ${formatDate(filterDate)} (${filingRows.length})`
-                : filingRows.length === 50
-                  ? "Filings — showing latest 50"
-                  : `Filings (${filingRows.length})`}
-            </h2>
-
-            {/* Desktop table */}
-            <div className="hidden md:block rounded-[var(--np-radius-lg)] border border-[var(--np-border)] bg-[var(--np-surface-elevated)] overflow-hidden">
-              <table className="w-full text-[13px]">
-                <thead>
-                  <tr className="border-b border-[var(--np-border)]">
-                    {["Type", "Filing"].map(col => (
-                      <th
-                        key={col}
-                        className="px-4 py-2.5 text-left text-[var(--np-text-muted)] text-[11px] font-medium uppercase tracking-wide"
-                      >
-                        {col}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                {filingGroups.map(({ date, items }) => (
-                  <tbody key={date}>
-                    <tr className="border-b border-[var(--np-border)] bg-[var(--np-surface-deep)]">
-                      <td colSpan={2} className="px-4 py-1.5 text-[11px] font-medium text-[var(--np-text-muted)] uppercase tracking-wide">
-                        {formatDate(date)}
-                      </td>
-                    </tr>
-                    {items.map(f => (
-                      <tr key={f.id} className="border-b border-[var(--np-border)] last:border-0">
-                        <td className="px-4 py-3 w-36 align-top">
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] border ${docTypeBadgeClass(f.docType)}`}>
-                            {docTypeLabel(f.docType)}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 align-top">
-                          {f.sourceUrl ? (
-                            <a
-                              href={f.sourceUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-[var(--np-text-strong)] font-medium hover:text-[var(--np-accent-text)] transition-colors"
-                            >
-                              {f.title}
-                            </a>
-                          ) : (
-                            <span className="text-[var(--np-text-strong)] font-medium">{f.title}</span>
-                          )}
-                          {f.payload?.summary && (
-                            <FilingSummary text={f.payload.summary} />
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                ))}
-              </table>
-            </div>
-
-            {/* Mobile card list */}
-            <div className="md:hidden flex flex-col gap-4">
-              {filingGroups.map(({ date, items }) => (
-                <div key={date}>
-                  <p className="text-[11px] font-medium text-[var(--np-text-muted)] uppercase tracking-wide px-1 mb-2">
-                    {formatDate(date)}
-                  </p>
-                  <div className="flex flex-col gap-2">
-                    {items.map(f => (
-                      <div
-                        key={f.id}
-                        className="rounded-[var(--np-radius-md)] border border-[var(--np-border)] bg-[var(--np-surface-elevated)] px-4 py-3"
-                      >
-                        <div className="mb-1.5">
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] border ${docTypeBadgeClass(f.docType)}`}>
-                            {docTypeLabel(f.docType)}
-                          </span>
-                        </div>
-                        {f.sourceUrl ? (
-                          <a
-                            href={f.sourceUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-[var(--np-text-strong)] font-medium text-[13px] hover:text-[var(--np-accent-text)] transition-colors block"
-                          >
-                            {f.title}
-                          </a>
-                        ) : (
-                          <p className="text-[var(--np-text-strong)] font-medium text-[13px]">{f.title}</p>
-                        )}
-                        {f.payload?.summary && (
-                          <FilingSummary text={f.payload.summary} />
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
+            <SectionLabel>Ask the record</SectionLabel>
+            <AskTheRecord limitPerDay={qnaLimitPerDay} usedToday={qnaUsedToday} suggestedQuestions={suggestedQuestions} />
           </div>
+        </aside>
+      </div>
+    </div>
+  )
+}
 
-          {/* Lineage stub — Phase 12b */}
-          <div className="rounded-[var(--np-radius-lg)] border border-[var(--np-border)] bg-[var(--np-surface-elevated)] px-5 py-4">
-            <h2 className="text-[var(--np-text-primary)] font-medium text-[13px] mb-1">
-              Related proceedings
-            </h2>
-            <p className="text-[var(--np-text-muted)] text-[12px]">
-              Lineage extraction coming in a future update.
-            </p>
-          </div>
-        </div>
+function GateCard({
+  heading, body, ctaHref, ctaLabel,
+}: {
+  heading: string
+  body: string
+  ctaHref?: string
+  ctaLabel?: string
+}) {
+  return (
+    <div className="rounded-[var(--np-radius-lg)] border border-[var(--np-border)] bg-[var(--np-surface-elevated)] px-8 py-12 text-center">
+      <h2 className="text-[var(--np-text-strong)] font-medium text-[14px] mb-2">{heading}</h2>
+      <p className="text-[var(--np-text-muted)] text-[13px] max-w-sm mx-auto leading-relaxed">{body}</p>
+      {ctaHref && ctaLabel && (
+        <Link href={ctaHref} className="inline-block mt-4 text-[13px] text-[var(--np-accent-text)] hover:text-[var(--np-accent-hover)] transition-colors">
+          {ctaLabel}
+        </Link>
       )}
     </div>
   )

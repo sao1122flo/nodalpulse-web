@@ -1,0 +1,427 @@
+import { db } from "@/db/client"
+import { dockets, filings, extractions, userDockets, filingDockets } from "@/db/schema"
+import { and, eq, asc, desc, isNotNull, count, inArray, ne, sql } from "drizzle-orm"
+import type { LinkedDocket } from "@/app/(app)/dashboard/queries"
+
+// Re-export so the page has a single import surface for the cross-jurisdiction type.
+export type { LinkedDocket } from "@/app/(app)/dashboard/queries"
+
+const DAYS_MS = 86_400_000
+
+// ---------------------------------------------------------------------------
+// resolveDocket — find the docket row by external_id (URL segment), excluding
+// ghost rows (jurisdiction IS NULL). When multiple rows share the external_id
+// (cross-source duplicates), pick the one with the most filings — deterministic
+// and content-rich. Mirrors the disambiguation in the legacy detail page.
+// ---------------------------------------------------------------------------
+
+export interface DocketHeader {
+  id:           string
+  externalId:   string
+  title:        string | null
+  jurisdiction: string | null
+  status:       string
+  openedAt:     string | null
+}
+
+export async function resolveDocket(docketNumber: string): Promise<DocketHeader | null> {
+  const [row] = await db
+    .select({
+      id:           dockets.id,
+      externalId:   dockets.externalId,
+      title:        dockets.title,
+      jurisdiction: dockets.jurisdiction,
+      status:       dockets.status,
+      openedAt:     dockets.openedAt,
+    })
+    .from(dockets)
+    .leftJoin(filings, eq(filings.docketId, dockets.id))
+    .where(and(eq(dockets.externalId, docketNumber), isNotNull(dockets.jurisdiction)))
+    .groupBy(dockets.id)
+    .orderBy(desc(count(filings.id)))
+    .limit(1)
+
+  return row ?? null
+}
+
+// ---------------------------------------------------------------------------
+// isDocketTracked — userDockets membership for the current user.
+// ---------------------------------------------------------------------------
+
+export async function isDocketTracked(userId: string, docketId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: userDockets.id })
+    .from(userDockets)
+    .where(and(eq(userDockets.userId, userId), eq(userDockets.docketId, docketId)))
+    .limit(1)
+  return !!row
+}
+
+// ---------------------------------------------------------------------------
+// getDocketMeta — filing count + first/last activity (COUNT, not a full fetch).
+// ---------------------------------------------------------------------------
+
+export interface DocketMeta {
+  filingCount:  number
+  firstFiledAt: Date | null
+  lastFiledAt:  Date | null
+}
+
+export async function getDocketMeta(docketId: string): Promise<DocketMeta> {
+  const [row] = await db
+    .select({
+      filingCount: count(filings.id),
+      firstFiled:  sql<string | null>`min(${filings.filedAt})`,
+      lastFiled:   sql<string | null>`max(${filings.filedAt})`,
+    })
+    .from(filings)
+    .where(eq(filings.docketId, docketId))
+
+  return {
+    filingCount:  Number(row?.filingCount ?? 0),
+    firstFiledAt: row?.firstFiled ? new Date(row.firstFiled) : null,
+    lastFiledAt:  row?.lastFiled ? new Date(row.lastFiled) : null,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// getDocketFilingsPage — newest-first filings for the timeline, capped at
+// `limit`. Pair with getDocketMeta().filingCount to show "latest N of M".
+// ---------------------------------------------------------------------------
+
+export interface RecordFiling {
+  id:        string
+  title:     string
+  docType:   string
+  filer:     string | null
+  filedAt:   Date
+  sourceUrl: string | null
+  summary:   string | null
+}
+
+export async function getDocketFilingsPage(docketId: string, limit: number): Promise<RecordFiling[]> {
+  const rows = await db
+    .select({
+      id:        filings.id,
+      title:     filings.title,
+      docType:   filings.docType,
+      filer:     filings.filer,
+      filedAt:   filings.filedAt,
+      sourceUrl: filings.sourceUrl,
+      payload:   extractions.payload,
+    })
+    .from(filings)
+    .leftJoin(extractions, eq(extractions.filingId, filings.id))
+    .where(eq(filings.docketId, docketId))
+    .orderBy(desc(filings.filedAt))
+    .limit(limit)
+
+  return rows.map(r => ({
+    id:        r.id,
+    title:     r.title,
+    docType:   r.docType,
+    filer:     r.filer,
+    filedAt:   r.filedAt,
+    sourceUrl: r.sourceUrl,
+    summary:   r.payload?.summary ?? null,
+  }))
+}
+
+// ---------------------------------------------------------------------------
+// getDocketParties — deduped party names across the docket's filings.
+// Strips LLM-appended role annotations like " (Intervenor, pro se)" before
+// dedup; canonical-name cleanup is services #116.
+// ---------------------------------------------------------------------------
+
+// A party with a best-effort role. Roles are heuristic in Phase 1 (Applicant =
+// filer of the application; Staff/Consumer Advocate by name; Intervenor from the
+// interventions list). Phase 2 (#services) will supply authoritative roles.
+export interface DocketParty {
+  name: string
+  role: string | null
+}
+
+const ROLE_ORDER: Record<string, number> = {
+  Applicant: 0,
+  Staff: 1,
+  "Consumer Advocate": 2,
+  Intervenor: 3,
+}
+
+export async function getDocketParties(docketId: string): Promise<DocketParty[]> {
+  const rows = await db
+    .select({ filer: filings.filer, docType: filings.docType, payload: extractions.payload })
+    .from(filings)
+    .leftJoin(extractions, eq(extractions.filingId, filings.id))
+    .where(eq(filings.docketId, docketId))
+    .orderBy(asc(filings.filedAt)) // earliest first so the application's filer wins for Applicant
+    .limit(300)
+
+  const normalize = (n: string) => n.replace(/\s*\(.*$/, "").trim()
+
+  const names = new Set<string>()
+  const intervenors = new Set<string>()
+  let applicant: string | null = null
+
+  for (const r of rows) {
+    for (const p of r.payload?.parties ?? []) {
+      const n = normalize(p)
+      if (n) names.add(n)
+    }
+    for (const iv of r.payload?.interventions ?? []) {
+      const n = normalize(iv.party)
+      if (n) intervenors.add(n)
+    }
+    if (!applicant && r.filer && /application/i.test(r.docType)) {
+      applicant = normalize(r.filer)
+      if (applicant) names.add(applicant)
+    }
+  }
+
+  const isStaff = (n: string) => /\b(puct staff|commission staff|public utility commission|puc staff)\b/i.test(n)
+  const isConsumerAdvocate = (n: string) => /office of public utility counsel|consumer counsel/i.test(n)
+
+  const roleFor = (n: string): string | null => {
+    if (applicant && n === applicant) return "Applicant"
+    if (isStaff(n)) return "Staff"
+    if (isConsumerAdvocate(n)) return "Consumer Advocate"
+    if (intervenors.has(n)) return "Intervenor"
+    return null
+  }
+
+  return [...names]
+    .filter(Boolean)
+    .map(name => ({ name, role: roleFor(name) }))
+    .sort((a, b) => {
+      const ra = a.role ? ROLE_ORDER[a.role] ?? 8 : 99
+      const rb = b.role ? ROLE_ORDER[b.role] ?? 8 : 99
+      if (ra !== rb) return ra - rb
+      return a.name.localeCompare(b.name)
+    })
+}
+
+// ---------------------------------------------------------------------------
+// getDocketDeadlines — P0. Filing-attached deadlines for THIS docket, semantic-
+// deduped, with a hard data-quality rule: every rendered deadline carries a
+// source link. `link` prefers the per-deadline verify_url and falls back to the
+// originating filing's source_url; deadlines with neither link are suppressed.
+// `estimated` is conservative — absent => estimated (never shown as confirmed).
+// ---------------------------------------------------------------------------
+
+export interface RecordDeadline {
+  type:         string
+  description:  string
+  date:         string
+  estimated:    boolean
+  link:         string | null
+  mentionCount: number
+  daysRemaining: number
+}
+
+// Treat blank/whitespace-only strings as "no link" — extraction payloads carry
+// empty-string URLs (e.g. FERC filings with source_url="") that must NOT count
+// as a source under the P0 data-quality rule.
+const cleanUrl = (s: string | null | undefined): string | null => {
+  const v = s?.trim()
+  return v ? v : null
+}
+
+// Fuzzy near-duplicate detection for deadline descriptions. Filings phrase the
+// same deadline differently ("EIA Form EIA-861M OMB approval expiration" vs
+// "EIA Form OMB approval expiration"); exact-key dedup misses these. We compare
+// significant-token sets and only merge when overlap is high — distinct same-day
+// obligations (e.g. "PJM must file…" vs "PJM transmission owners must file…")
+// stay separate.
+const DEADLINE_STOPWORDS = new Set([
+  "the", "a", "an", "of", "to", "for", "per", "on", "and", "or", "its", "this",
+  "that", "by", "in", "is", "are", "be", "with", "as", "at", "from",
+])
+
+function descTokens(desc: string): Set<string> {
+  return new Set(
+    desc.toLowerCase().split(/[^a-z0-9]+/).filter(t => t.length >= 3 && !DEADLINE_STOPWORDS.has(t))
+  )
+}
+
+function jaccard(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0
+  let inter = 0
+  for (const t of a) if (b.has(t)) inter++
+  return inter / (a.size + b.size - inter)
+}
+
+const DEADLINE_MERGE_THRESHOLD = 0.6
+
+export async function getDocketDeadlines(docketId: string, today: string): Promise<RecordDeadline[]> {
+  const todayMs = new Date(today + "T00:00:00Z").getTime()
+
+  const rows = await db
+    .select({ sourceUrl: filings.sourceUrl, payload: extractions.payload })
+    .from(filings)
+    .innerJoin(extractions, eq(extractions.filingId, filings.id))
+    .where(eq(filings.docketId, docketId))
+
+  // groups hold the per-row link (verify_url, else originating filing's URL).
+  // docketSource is a docket-level fallback: the first real URL found anywhere
+  // in this docket's extractions — including undated entries, which on FERC
+  // dockets carry the eLibrary docket link. Lets a dated deadline that lacks its
+  // own URL still resolve to a verifiable docket source instead of being dropped.
+  const groups  = new Map<string, RecordDeadline & { _perRow: string | null }>()
+  const descLen = new Map<string, number>()
+  let docketSource: string | null = null
+
+  for (const row of rows) {
+    docketSource = docketSource ?? cleanUrl(row.sourceUrl)
+    for (const dl of row.payload?.deadlines ?? []) {
+      docketSource = docketSource ?? cleanUrl(dl.verify_url)
+      if (!dl.date || dl.date < today) continue
+      const norm = dl.description.toLowerCase().replace(/\s+/g, " ").trim()
+      const type = dl.type ?? "other"
+      const key  = `${dl.date}:${type}:${norm.slice(0, 80)}`
+      const perRow = cleanUrl(dl.verify_url) ?? cleanUrl(row.sourceUrl)
+      const daysRemaining = Math.ceil(
+        (new Date(dl.date + "T12:00:00Z").getTime() - todayMs) / DAYS_MS
+      )
+
+      const existing = groups.get(key)
+      if (!existing) {
+        groups.set(key, {
+          type,
+          description:  dl.description,
+          date:         dl.date,
+          estimated:    dl.estimated ?? true,
+          link:         null, // resolved after the loop
+          _perRow:      perRow,
+          mentionCount: 1,
+          daysRemaining,
+        })
+        descLen.set(key, dl.description.length)
+      } else {
+        existing.mentionCount++
+        const prevLen = descLen.get(key) ?? 0
+        if (dl.description.length > prevLen) {
+          existing.description = dl.description
+          descLen.set(key, dl.description.length)
+        }
+        // Any confirmed mention promotes the group to confirmed.
+        if (!(dl.estimated ?? true)) existing.estimated = false
+        // Prefer an authoritative per-row verify_url when one shows up.
+        if (cleanUrl(dl.verify_url)) existing._perRow = cleanUrl(dl.verify_url)
+        else if (!existing._perRow && perRow) existing._perRow = perRow
+      }
+    }
+  }
+
+  // Resolve each deadline's link: its own source, else the docket-level source.
+  // Data-quality gate: never render an extracted deadline without a source link.
+  const resolved = [...groups.values()]
+    .map(({ _perRow, ...d }) => ({ ...d, link: _perRow ?? docketSource }))
+    .filter(d => d.link !== null)
+
+  // Second pass: fuzzy-merge near-identical descriptions sharing (date, type).
+  // Keeps the most complete wording, sums mention counts, and promotes to
+  // confirmed if any merged mention was confirmed.
+  const merged: (RecordDeadline & { _tokens: Set<string> })[] = []
+  for (const d of resolved) {
+    const tokens = descTokens(d.description)
+    const hit = merged.find(
+      m => m.date === d.date && m.type === d.type && jaccard(m._tokens, tokens) >= DEADLINE_MERGE_THRESHOLD
+    )
+    if (!hit) {
+      merged.push({ ...d, _tokens: tokens })
+      continue
+    }
+    hit.mentionCount += d.mentionCount
+    if (!d.estimated) hit.estimated = false
+    if (d.description.length > hit.description.length) {
+      // Prefer the most complete wording, and the link that came with it.
+      hit.description = d.description
+      hit._tokens = tokens
+      if (d.link) hit.link = d.link
+    }
+  }
+
+  return merged
+    .map(({ _tokens, ...d }) => d)
+    .sort((a, b) => a.daysRemaining - b.daysRemaining)
+}
+
+// ---------------------------------------------------------------------------
+// getLinkedDockets — cross-jurisdiction links via the filing_dockets junction.
+// Finds every filing this docket appears on (any caption), then the OTHER
+// dockets sharing those filings. Returns [] when there are no links.
+// ---------------------------------------------------------------------------
+
+export async function getLinkedDockets(docketId: string): Promise<LinkedDocket[]> {
+  const fdRows = await db
+    .select({ filingId: filingDockets.filingId })
+    .from(filingDockets)
+    .where(eq(filingDockets.docketId, docketId))
+    .limit(300)
+
+  if (fdRows.length === 0) return []
+  const filingIds = [...new Set(fdRows.map(r => r.filingId))]
+
+  const linked = await db
+    .select({
+      id:           dockets.id,
+      externalId:   dockets.externalId,
+      title:        dockets.title,
+      jurisdiction: dockets.jurisdiction,
+    })
+    .from(filingDockets)
+    .innerJoin(dockets, eq(dockets.id, filingDockets.docketId))
+    .where(and(inArray(filingDockets.filingId, filingIds), ne(filingDockets.docketId, docketId)))
+    .limit(50)
+
+  const seen = new Set<string>()
+  const out: LinkedDocket[] = []
+  for (const r of linked) {
+    if (seen.has(r.externalId)) continue
+    seen.add(r.externalId)
+    out.push({ id: r.id, externalId: r.externalId, title: r.title, jurisdiction: r.jurisdiction })
+  }
+  return out
+}
+
+// ---------------------------------------------------------------------------
+// getDocketSalience — per-docket "what's driving" signal (#128). Reads the
+// services-owned market_salience table keyed by docket_key (= external_id) for
+// the most recent week. Returns null (card hidden) on no signal or any error —
+// the table may not exist in every environment.
+// ---------------------------------------------------------------------------
+
+export interface DocketSalience {
+  market:   string
+  rank:     number
+  score:    number
+  headline: string | null
+}
+
+export async function getDocketSalience(externalId: string): Promise<DocketSalience | null> {
+  try {
+    const rows = await db.execute<{
+      market:   string
+      rank:     number
+      score:    string
+      headline: string | null
+    }>(sql`
+      SELECT market, rank, score::float AS score, headline
+      FROM market_salience
+      WHERE docket_key = ${externalId}
+        AND week_start >= (CURRENT_DATE - INTERVAL '14 days')::date
+      ORDER BY week_start DESC, score DESC
+      LIMIT 1
+    `)
+    const r = rows[0]
+    if (!r) return null
+    return {
+      market:   r.market,
+      rank:     Number(r.rank),
+      score:    Number(r.score),
+      headline: r.headline ?? null,
+    }
+  } catch {
+    return null
+  }
+}
