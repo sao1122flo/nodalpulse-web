@@ -34,6 +34,10 @@ export interface DashboardDeadline {
   verifyUrl: string | null
   daysRemaining: number
   mentionCount: number
+  // 2b: distinguishes filing-extracted deadlines from market_events calendar
+  // entries. market_events get a "Market event" chip (no Record-page link) and
+  // are treated as confirmed (authoritative calendar dates, not extractions).
+  kind: "filing" | "market_event"
 }
 
 export interface FeedItem {
@@ -164,6 +168,14 @@ export async function getTrackedDocketIds(
 // Deadline semantic dedup helpers
 // ---------------------------------------------------------------------------
 
+// Treat blank/whitespace-only strings as "no link" — extraction payloads carry
+// empty-string URLs (e.g. FERC filings with source_url="") that must not count
+// as a source under the data-quality rule. (Mirrors the dockets-record helper.)
+const cleanUrl = (s: string | null | undefined): string | null => {
+  const v = s?.trim()
+  return v ? v : null
+}
+
 // Classify a hearing description into a known subtype so that ~30 filings all
 // mentioning the same merits hearing collapse to one card.  Priority order:
 // check prehearing first — a prehearing notice may mention the merits date in
@@ -210,6 +222,7 @@ export async function getDeadlines(
   docketIds: string[],
   entitledJurisdictions: string[],
   today: string,
+  limit = 100,
 ): Promise<DashboardDeadline[]> {
   if (docketIds.length === 0) return []
 
@@ -229,6 +242,7 @@ export async function getDeadlines(
       docketExternalId: dockets.externalId,
       docketTitle:      dockets.title,
       jurisdiction:     dockets.jurisdiction,
+      sourceUrl:        filings.sourceUrl,
       payload:          extractions.payload,
     })
     .from(filings)
@@ -246,11 +260,29 @@ export async function getDeadlines(
       )
     )
 
+  // Docket-level source fallback (B1 parity): the first real URL found anywhere
+  // in a docket's extractions — filing source_url, else any deadline verify_url
+  // (including undated entries, which on FERC carry the eLibrary docket link).
+  // Lets a dated deadline lacking its own URL still resolve to a verifiable
+  // docket source instead of rendering link-less. P0: every row gets a link.
+  const docketSource = new Map<string, string>()
+  for (const row of rows) {
+    if (docketSource.has(row.docketId)) continue
+    const fromFiling = cleanUrl(row.sourceUrl)
+    if (fromFiling) { docketSource.set(row.docketId, fromFiling); continue }
+    for (const dl of row.payload?.deadlines ?? []) {
+      const v = cleanUrl(dl.verify_url)
+      if (v) { docketSource.set(row.docketId, v); break }
+    }
+  }
+
   // Semantic dedup: group entries by (docket, date, type, subtype) so many
   // filings all mentioning the same merits hearing collapse to one card.
   // Within each group: keep the longest description (most complete wording),
   // prefer confirmed (estimated=false) if any mention is confirmed.
-  const dlGroups = new Map<string, DashboardDeadline>()
+  // _perRow holds the best per-row link (verify_url, else filing source_url),
+  // resolved to a final verifyUrl (with docket-level fallback) after the loop.
+  const dlGroups = new Map<string, DashboardDeadline & { _perRow: string | null }>()
   const dlDescLen = new Map<string, number>()
 
   for (const row of rows) {
@@ -260,6 +292,7 @@ export async function getDeadlines(
       const daysRemaining = Math.ceil(
         (new Date(dl.date + "T12:00:00Z").getTime() - todayMs) / DAYS_MS
       )
+      const perRow = cleanUrl(dl.verify_url) ?? cleanUrl(row.sourceUrl)
       const existing = dlGroups.get(key)
       if (!existing) {
         dlGroups.set(key, {
@@ -271,9 +304,11 @@ export async function getDeadlines(
           description:      dl.description,
           date:             dl.date,
           estimated:        dl.estimated ?? true,
-          verifyUrl:        dl.verify_url ?? null,
+          verifyUrl:        null, // resolved after the loop
+          _perRow:          perRow,
           daysRemaining,
           mentionCount:     1,
+          kind:             "filing",
         })
         dlDescLen.set(key, dl.description.length)
       } else {
@@ -284,10 +319,19 @@ export async function getDeadlines(
           dlDescLen.set(key, dl.description.length)
         }
         if (!(dl.estimated ?? true)) existing.estimated = false
+        // Prefer an authoritative per-row verify_url when one shows up.
+        if (cleanUrl(dl.verify_url)) existing._perRow = cleanUrl(dl.verify_url)
+        else if (!existing._perRow && perRow) existing._perRow = perRow
       }
     }
   }
-  result.push(...dlGroups.values())
+
+  // Resolve each deadline's link: its own source, else the docket-level source.
+  // D2: never drop a row — fall through to docket-level link (null only when a
+  // docket has no URL anywhere, which is rare and still beats hiding a deadline).
+  for (const { _perRow, ...d } of dlGroups.values()) {
+    result.push({ ...d, verifyUrl: _perRow ?? docketSource.get(d.docketId) ?? null })
+  }
 
   // --- market_events calendar (services-owned table, raw SQL) ---
   // Only fetch for entitled jurisdictions; skip if none.
@@ -326,10 +370,13 @@ export async function getDeadlines(
           type:             "calendar",
           description:      evt.title,
           date:             evt.event_date,
-          estimated:        evt.estimated,
-          verifyUrl:        evt.source_url ?? null,
+          // D5: market_events are authoritative calendar dates, not extractions
+          // → always confirmed, regardless of the table's `estimated` column.
+          estimated:        false,
+          verifyUrl:        cleanUrl(evt.source_url),
           daysRemaining,
           mentionCount:     1,
+          kind:             "market_event",
         })
       }
     } catch {
@@ -338,7 +385,7 @@ export async function getDeadlines(
   }
 
   // Cap after global sort — keeps the strip bounded regardless of tracking breadth.
-  return result.sort((a, b) => a.daysRemaining - b.daysRemaining).slice(0, 100)
+  return result.sort((a, b) => a.daysRemaining - b.daysRemaining).slice(0, limit)
 }
 
 // ---------------------------------------------------------------------------
