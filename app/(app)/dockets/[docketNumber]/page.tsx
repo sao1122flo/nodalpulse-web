@@ -329,8 +329,10 @@ export default async function DocketRecordPage({
                       <span className="block text-[13px] font-medium text-[var(--np-text-strong)] group-hover:text-[var(--np-accent-text)] transition-colors">
                         {ld.jurisdiction ? `${jurisdictionLabel(ld.jurisdiction)} ` : ""}{ld.externalId}
                       </span>
-                      {ld.title && (
-                        <span className="block text-[12px] text-[var(--np-text-muted)] leading-snug">{ld.title}</span>
+                      {(ld.reason ?? ld.title) && (
+                        <span className="block text-[12px] text-[var(--np-text-muted)] leading-snug">
+                          {ld.reason ?? ld.title}
+                        </span>
                       )}
                     </span>
                   </Link>

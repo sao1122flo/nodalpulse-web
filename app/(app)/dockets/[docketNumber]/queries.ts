@@ -146,6 +146,8 @@ const ROLE_ORDER: Record<string, number> = {
   Staff: 1,
   "Consumer Advocate": 2,
   Intervenor: 3,
+  Protestant: 4,
+  Commenter: 5,
 }
 
 export async function getDocketParties(docketId: string): Promise<DocketParty[]> {
@@ -161,6 +163,7 @@ export async function getDocketParties(docketId: string): Promise<DocketParty[]>
 
   const names = new Set<string>()
   const intervenors = new Set<string>()
+  const realRole = new Map<string, string>()  // authoritative party_role (prompt_ver 1.6+)
   let applicant: string | null = null
 
   for (const r of rows) {
@@ -170,7 +173,10 @@ export async function getDocketParties(docketId: string): Promise<DocketParty[]>
     }
     for (const iv of r.payload?.interventions ?? []) {
       const n = normalize(iv.party)
-      if (n) intervenors.add(n)
+      if (!n) continue
+      intervenors.add(n)
+      const pr = iv.party_role?.trim()
+      if (pr && !realRole.has(n)) realRole.set(n, pr.toLowerCase())
     }
     if (!applicant && r.filer && /application/i.test(r.docType)) {
       applicant = normalize(r.filer)
@@ -181,7 +187,15 @@ export async function getDocketParties(docketId: string): Promise<DocketParty[]>
   const isStaff = (n: string) => /\b(puct staff|commission staff|public utility commission|puc staff)\b/i.test(n)
   const isConsumerAdvocate = (n: string) => /office of public utility counsel|consumer counsel/i.test(n)
 
+  // Authoritative role label (1.6+ extraction) takes precedence over the heuristics.
+  const REAL_LABEL: Record<string, string> = {
+    applicant: "Applicant", intervenor: "Intervenor", protestant: "Protestant",
+    staff: "Staff", commenter: "Commenter",
+  }
+
   const roleFor = (n: string): string | null => {
+    const real = realRole.get(n)
+    if (real) return REAL_LABEL[real] ?? (real.charAt(0).toUpperCase() + real.slice(1))
     if (applicant && n === applicant) return "Applicant"
     if (isStaff(n)) return "Staff"
     if (isConsumerAdvocate(n)) return "Consumer Advocate"
@@ -216,6 +230,7 @@ export interface RecordDeadline {
   link:         string | null
   mentionCount: number
   daysRemaining: number
+  actor:        string | null   // who must act (prompt_ver 1.6+); null on older extractions
 }
 
 // Treat blank/whitespace-only strings as "no link" — extraction payloads carry
@@ -294,6 +309,7 @@ export async function getDocketDeadlines(docketId: string, today: string): Promi
           _perRow:      perRow,
           mentionCount: 1,
           daysRemaining,
+          actor:        dl.actor?.trim() || null,
         })
         descLen.set(key, dl.description.length)
       } else {
@@ -308,6 +324,7 @@ export async function getDocketDeadlines(docketId: string, today: string): Promi
         // Prefer an authoritative per-row verify_url when one shows up.
         if (cleanUrl(dl.verify_url)) existing._perRow = cleanUrl(dl.verify_url)
         else if (!existing._perRow && perRow) existing._perRow = perRow
+        if (!existing.actor && dl.actor?.trim()) existing.actor = dl.actor.trim()
       }
     }
   }
@@ -333,6 +350,7 @@ export async function getDocketDeadlines(docketId: string, today: string): Promi
     }
     hit.mentionCount += d.mentionCount
     if (!d.estimated) hit.estimated = false
+    if (!hit.actor && d.actor) hit.actor = d.actor
     if (d.description.length > hit.description.length) {
       // Prefer the most complete wording, and the link that came with it.
       hit.description = d.description
@@ -352,7 +370,13 @@ export async function getDocketDeadlines(docketId: string, today: string): Promi
 // dockets sharing those filings. Returns [] when there are no links.
 // ---------------------------------------------------------------------------
 
-export async function getLinkedDockets(docketId: string): Promise<LinkedDocket[]> {
+// LinkedDocket plus a relationship reason from this docket's docket_linkages
+// (prompt_ver 1.6+). reason is null on older extractions.
+export type RecordLinkedDocket = LinkedDocket & { reason: string | null }
+
+const normKey = (s: string) => s.replace(/[\s.\-_]/g, "").toUpperCase()
+
+export async function getLinkedDockets(docketId: string): Promise<RecordLinkedDocket[]> {
   const fdRows = await db
     .select({ filingId: filingDockets.filingId })
     .from(filingDockets)
@@ -374,12 +398,42 @@ export async function getLinkedDockets(docketId: string): Promise<LinkedDocket[]
     .where(and(inArray(filingDockets.filingId, filingIds), ne(filingDockets.docketId, docketId)))
     .limit(50)
 
+  // Relationship reasons from this docket's own extractions (docket_linkages).
+  // Keyed loosely (strip punctuation/case) so "EL25-49" matches "EL25-49-000" etc.
+  const reasonByDocket = new Map<string, string>()
+  const linkRows = await db
+    .select({ payload: extractions.payload })
+    .from(filings)
+    .innerJoin(extractions, eq(extractions.filingId, filings.id))
+    .where(eq(filings.docketId, docketId))
+    .limit(300)
+  for (const r of linkRows) {
+    for (const dl of r.payload?.docket_linkages ?? []) {
+      const k = normKey(dl.docket ?? "")
+      const reason = dl.reason?.trim()
+      if (k && reason && !reasonByDocket.has(k)) reasonByDocket.set(k, reason)
+    }
+  }
+
+  const matchReason = (externalId: string): string | null => {
+    const k = normKey(externalId)
+    if (reasonByDocket.has(k)) return reasonByDocket.get(k)!
+    // prefix match either direction (handles trailing sub-docket suffixes)
+    for (const [rk, rv] of reasonByDocket) {
+      if (rk.startsWith(k) || k.startsWith(rk)) return rv
+    }
+    return null
+  }
+
   const seen = new Set<string>()
-  const out: LinkedDocket[] = []
+  const out: RecordLinkedDocket[] = []
   for (const r of linked) {
     if (seen.has(r.externalId)) continue
     seen.add(r.externalId)
-    out.push({ id: r.id, externalId: r.externalId, title: r.title, jurisdiction: r.jurisdiction })
+    out.push({
+      id: r.id, externalId: r.externalId, title: r.title, jurisdiction: r.jurisdiction,
+      reason: matchReason(r.externalId),
+    })
   }
   return out
 }

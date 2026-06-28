@@ -102,6 +102,11 @@ export function RecordDeadlines({ docketNumber, deadlines }: Props) {
                 <p className="text-[13px] text-[var(--np-text-body)] leading-snug">
                   {dl.description}
                 </p>
+                {dl.actor && (
+                  <p className="text-[11px] text-[var(--np-text-muted)] mt-0.5">
+                    {dl.actor}
+                  </p>
+                )}
               </div>
             </div>
 
