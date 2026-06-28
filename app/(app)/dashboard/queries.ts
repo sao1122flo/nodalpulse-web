@@ -9,6 +9,7 @@ import {
   watchedEntities,
 } from "@/db/schema"
 import { and, eq, inArray, notInArray, desc, gte, sql, isNotNull } from "drizzle-orm"
+import { bestSourceLink, isBrokenFercSearchUrl, fercAccessionUrl } from "@/lib/ferc-links"
 
 // ---------------------------------------------------------------------------
 // Types
@@ -243,6 +244,7 @@ export async function getDeadlines(
       docketTitle:      dockets.title,
       jurisdiction:     dockets.jurisdiction,
       sourceUrl:        filings.sourceUrl,
+      filingExternalId: filings.externalId,
       payload:          extractions.payload,
     })
     .from(filings)
@@ -260,19 +262,20 @@ export async function getDeadlines(
       )
     )
 
-  // Docket-level source fallback (B1 parity): the first real URL found anywhere
-  // in a docket's extractions — filing source_url, else any deadline verify_url
-  // (including undated entries, which on FERC carry the eLibrary docket link).
-  // Lets a dated deadline lacking its own URL still resolve to a verifiable
-  // docket source instead of rendering link-less. P0: every row gets a link.
+  // Docket-level source fallback (B1 parity): the first verifiable URL found
+  // anywhere in a docket's extractions — a real filing source_url, else the FERC
+  // accession filelist link (FERC filing external_ids ARE the accession), else a
+  // non-broken deadline verify_url. The broken eLibrary ?q= search URLs are
+  // skipped (they land on an empty SPA page). Lets a dated deadline lacking its
+  // own URL still resolve to a verifiable source. P0: every row gets a link.
   const docketSource = new Map<string, string>()
   for (const row of rows) {
     if (docketSource.has(row.docketId)) continue
-    const fromFiling = cleanUrl(row.sourceUrl)
+    const fromFiling = cleanUrl(row.sourceUrl) ?? fercAccessionUrl(row.filingExternalId)
     if (fromFiling) { docketSource.set(row.docketId, fromFiling); continue }
     for (const dl of row.payload?.deadlines ?? []) {
       const v = cleanUrl(dl.verify_url)
-      if (v) { docketSource.set(row.docketId, v); break }
+      if (v && !isBrokenFercSearchUrl(v)) { docketSource.set(row.docketId, v); break }
     }
   }
 
@@ -292,7 +295,9 @@ export async function getDeadlines(
       const daysRemaining = Math.ceil(
         (new Date(dl.date + "T12:00:00Z").getTime() - todayMs) / DAYS_MS
       )
-      const perRow = cleanUrl(dl.verify_url) ?? cleanUrl(row.sourceUrl)
+      // FERC-aware: real verify_url (not the broken ?q= search) → filing
+      // source_url → FERC accession filelist link (from the filing external_id).
+      const perRow = bestSourceLink(dl.verify_url, row.sourceUrl, row.filingExternalId)
       const existing = dlGroups.get(key)
       if (!existing) {
         dlGroups.set(key, {
@@ -319,8 +324,10 @@ export async function getDeadlines(
           dlDescLen.set(key, dl.description.length)
         }
         if (!(dl.estimated ?? true)) existing.estimated = false
-        // Prefer an authoritative per-row verify_url when one shows up.
-        if (cleanUrl(dl.verify_url)) existing._perRow = cleanUrl(dl.verify_url)
+        // Prefer a real per-row verify_url (not the broken search URL); otherwise
+        // keep the first usable link (filing source_url / FERC accession).
+        const realVerify = cleanUrl(dl.verify_url)
+        if (realVerify && !isBrokenFercSearchUrl(realVerify)) existing._perRow = realVerify
         else if (!existing._perRow && perRow) existing._perRow = perRow
       }
     }

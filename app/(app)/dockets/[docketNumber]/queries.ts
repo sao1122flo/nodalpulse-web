@@ -1,6 +1,7 @@
 import { db } from "@/db/client"
 import { dockets, filings, extractions, userDockets, filingDockets } from "@/db/schema"
 import { and, eq, asc, desc, isNotNull, count, inArray, ne, sql } from "drizzle-orm"
+import { bestSourceLink, isBrokenFercSearchUrl, fercAccessionUrl } from "@/lib/ferc-links"
 import type { LinkedDocket } from "@/app/(app)/dashboard/queries"
 
 // Re-export so the page has a single import surface for the cross-jurisdiction type.
@@ -271,7 +272,7 @@ export async function getDocketDeadlines(docketId: string, today: string): Promi
   const todayMs = new Date(today + "T00:00:00Z").getTime()
 
   const rows = await db
-    .select({ sourceUrl: filings.sourceUrl, payload: extractions.payload })
+    .select({ sourceUrl: filings.sourceUrl, filingExternalId: filings.externalId, payload: extractions.payload })
     .from(filings)
     .innerJoin(extractions, eq(extractions.filingId, filings.id))
     .where(eq(filings.docketId, docketId))
@@ -286,14 +287,17 @@ export async function getDocketDeadlines(docketId: string, today: string): Promi
   let docketSource: string | null = null
 
   for (const row of rows) {
-    docketSource = docketSource ?? cleanUrl(row.sourceUrl)
+    docketSource = docketSource ?? cleanUrl(row.sourceUrl) ?? fercAccessionUrl(row.filingExternalId)
     for (const dl of row.payload?.deadlines ?? []) {
-      docketSource = docketSource ?? cleanUrl(dl.verify_url)
+      const dv = cleanUrl(dl.verify_url)
+      if (dv && !isBrokenFercSearchUrl(dv)) docketSource = docketSource ?? dv
       if (!dl.date || dl.date < today) continue
       const norm = dl.description.toLowerCase().replace(/\s+/g, " ").trim()
       const type = dl.type ?? "other"
       const key  = `${dl.date}:${type}:${norm.slice(0, 80)}`
-      const perRow = cleanUrl(dl.verify_url) ?? cleanUrl(row.sourceUrl)
+      // FERC-aware: real verify_url (not the broken ?q= search) → filing
+      // source_url → FERC accession filelist link (from the filing external_id).
+      const perRow = bestSourceLink(dl.verify_url, row.sourceUrl, row.filingExternalId)
       const daysRemaining = Math.ceil(
         (new Date(dl.date + "T12:00:00Z").getTime() - todayMs) / DAYS_MS
       )
@@ -321,8 +325,9 @@ export async function getDocketDeadlines(docketId: string, today: string): Promi
         }
         // Any confirmed mention promotes the group to confirmed.
         if (!(dl.estimated ?? true)) existing.estimated = false
-        // Prefer an authoritative per-row verify_url when one shows up.
-        if (cleanUrl(dl.verify_url)) existing._perRow = cleanUrl(dl.verify_url)
+        // Prefer a real per-row verify_url (not the broken search URL); otherwise
+        // keep the first usable link (filing source_url / FERC accession).
+        if (dv && !isBrokenFercSearchUrl(dv)) existing._perRow = dv
         else if (!existing._perRow && perRow) existing._perRow = perRow
         if (!existing.actor && dl.actor?.trim()) existing.actor = dl.actor.trim()
       }
