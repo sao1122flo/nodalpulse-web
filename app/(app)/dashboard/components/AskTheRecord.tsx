@@ -9,6 +9,9 @@ import { Citation } from "@/components/Citation"
 interface Props {
   limitPerDay: number
   usedToday: number
+  // Optional starter prompts (e.g. on a docket Record page). Clicking one fills
+  // the input. Q&A still searches all the user's tracked filings.
+  suggestedQuestions?: string[]
 }
 
 interface Answer {
@@ -17,7 +20,7 @@ interface Answer {
   citations: QnaCitation[]
 }
 
-export function AskTheRecord({ limitPerDay, usedToday }: Props) {
+export function AskTheRecord({ limitPerDay, usedToday, suggestedQuestions = [] }: Props) {
   const [question, setQuestion] = useState("")
   const [pendingQuestion, setPendingQuestion] = useState<string | null>(null)
   const [answer, setAnswer] = useState<Answer | null>(null)
@@ -62,6 +65,18 @@ export function AskTheRecord({ limitPerDay, usedToday }: Props) {
       setAnswer({ question: q, text, citations })
     })
   }
+
+  function fillQuestion(q: string) {
+    setQuestion(q)
+    const el = inputRef.current
+    if (el) {
+      el.focus()
+      el.style.height = "auto"
+      el.style.height = Math.min(el.scrollHeight, 100) + "px"
+    }
+  }
+
+  const showSuggestions = suggestedQuestions.length > 0 && !answer && !isPending && !blocked
 
   return (
     <div className="rounded-[var(--np-radius-lg)] border border-[var(--np-border)] bg-[var(--np-surface-elevated)] overflow-hidden">
@@ -137,6 +152,22 @@ export function AskTheRecord({ limitPerDay, usedToday }: Props) {
           {isPending ? "…" : "Ask"}
         </button>
       </div>
+
+      {/* Suggested questions — fill the input on click */}
+      {showSuggestions && (
+        <div className="flex flex-wrap gap-1.5 px-4 pb-3">
+          {suggestedQuestions.map(q => (
+            <button
+              key={q}
+              type="button"
+              onClick={() => fillQuestion(q)}
+              className="text-[11px] px-2.5 py-1 rounded-full border border-[var(--np-border)] bg-[var(--np-surface-deep)] text-[var(--np-text-body)] hover:border-[var(--np-accent)] hover:text-[var(--np-accent-text)] transition-colors cursor-pointer text-left"
+            >
+              {q}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Loading */}
       {isPending && (

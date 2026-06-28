@@ -13,8 +13,9 @@ import {
   unique,
 } from "drizzle-orm/pg-core"
 
-// Matches the JSONB payload written by services' extraction worker (schema_ver "1.0",
-// prompt_ver "1.5"+).
+// Matches the JSONB payload written by services' extraction worker (schema_ver "1.1",
+// prompt_ver "1.6"+). actor / party_role / docket_linkages are prompt_ver 1.6 additions —
+// optional so older (1.0/1.5) extractions still type-check.
 export interface ExtractionDeadline {
   type?:       string          // hearing|compliance|comment_deadline|rehearing|effective_date|protest_notice|other
   description: string
@@ -22,11 +23,18 @@ export interface ExtractionDeadline {
   source?:     string          // filing|order|notice
   estimated?:  boolean
   verify_url?: string | null
+  actor?:      string | null   // who must act (1.6+): Applicant|Intervenors|Staff|ALJ|…
 }
 
 export interface ExtractionIntervention {
-  party:  string
-  stance: "support" | "oppose" | "comments" | "protest"
+  party:       string
+  stance:      "support" | "oppose" | "comments" | "protest"
+  party_role?: string | null   // applicant|intervenor|protestant|staff|commenter (1.6+)
+}
+
+export interface DocketLinkage {
+  docket: string
+  reason: string
 }
 
 export interface ExtractionPayload {
@@ -35,6 +43,7 @@ export interface ExtractionPayload {
   parties?:          string[]
   deadlines?:        ExtractionDeadline[]
   interventions?:    ExtractionIntervention[]
+  docket_linkages?:  DocketLinkage[]   // explicitly-referenced related dockets (1.6+)
   effective_date?:   string | null
   key_points?:       string[]
   relief_requested?: string | null
