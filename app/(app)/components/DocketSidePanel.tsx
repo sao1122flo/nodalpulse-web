@@ -127,6 +127,9 @@ export function DocketSidePanel() {
   // Fetch when param changes
   useEffect(() => {
     if (!docketParam) {
+      // Intentional reset when the panel closes (no docket selected). The sync
+      // setState here runs only on the clear path, not in a render loop.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setData(null)
       lastFetched.current = null
       return

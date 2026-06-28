@@ -85,7 +85,7 @@ export default async function DashboardPage({
     readiness &&
     !readiness.hasExtractions &&
     readiness.latestTrackAt &&
-    Date.now() - readiness.latestTrackAt.getTime() < BACKFILL_WINDOW_MS
+    new Date().getTime() - readiness.latestTrackAt.getTime() < BACKFILL_WINDOW_MS
   )
 
   // Discovery panel — entity mentions (FERC/PJM/CAISO markets only, rolling 30d)
