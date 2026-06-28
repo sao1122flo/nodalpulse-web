@@ -26,6 +26,7 @@ import {
   getDocketSalience,
   isDocketTracked,
 } from "./queries"
+import type { DocketSalience } from "./queries"
 
 export const metadata: Metadata = { title: "Docket" }
 
@@ -78,6 +79,20 @@ function StatusPill({ status }: { status: string }) {
       {label}
     </span>
   )
+}
+
+function SalienceTrendBadge({ salience }: { salience: DocketSalience }) {
+  const base = "text-[11px] px-2 py-0.5 rounded-full border flex-shrink-0"
+  if (salience.trend === "accelerating") {
+    return <span className={`${base} bg-[rgba(34,197,94,0.10)] text-[var(--np-success)] border-[rgba(34,197,94,0.30)]`}>Accelerating ↗</span>
+  }
+  if (salience.trend === "cooling") {
+    return <span className={`${base} bg-[var(--np-surface-deep)] text-[var(--np-text-muted)] border-[var(--np-border)]`}>Cooling ↓</span>
+  }
+  if (salience.trend === "steady") {
+    return <span className={`${base} bg-[var(--np-surface-deep)] text-[var(--np-text-muted)] border-[var(--np-border)]`}>Steady</span>
+  }
+  return <span className={`${base} bg-[rgba(34,197,94,0.10)] text-[var(--np-success)] border-[rgba(34,197,94,0.30)]`}>Salience {Math.round(salience.score)}</span>
 }
 
 function RecordHeader({
@@ -261,13 +276,16 @@ export default async function DocketRecordPage({
                   <span className="text-[var(--np-success)]" aria-hidden="true">↗</span>
                   What&rsquo;s driving this docket
                 </h2>
-                <span className="text-[11px] px-2 py-0.5 rounded-full bg-[rgba(34,197,94,0.10)] text-[var(--np-success)] border border-[rgba(34,197,94,0.30)] flex-shrink-0">
-                  Salience {Math.round(salience.score)}
-                </span>
+                <SalienceTrendBadge salience={salience} />
               </div>
               <p className="text-[13px] text-[var(--np-text-body)] leading-relaxed">
                 {salience.headline ?? `Active this week in ${jurisdictionLabel(docket.jurisdiction ?? salience.market)}.`}
               </p>
+              {salience.filingsMultiple && salience.filingsMultiple > 1 && (
+                <p className="text-[12px] text-[var(--np-text-muted)] mt-1.5">
+                  Filing volume up {salience.filingsMultiple}× week-over-week.
+                </p>
+              )}
             </div>
           )}
 

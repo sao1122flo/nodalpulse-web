@@ -396,30 +396,51 @@ export interface DocketSalience {
   rank:     number
   score:    number
   headline: string | null
+  // Week-over-week trend derived from the two most recent salient weeks (2a).
+  trend:           "accelerating" | "steady" | "cooling" | null
+  filingsMultiple: number | null   // e.g. 3 → "filing volume up 3×"
 }
 
 export async function getDocketSalience(externalId: string): Promise<DocketSalience | null> {
   try {
     const rows = await db.execute<{
-      market:   string
-      rank:     number
-      score:    string
-      headline: string | null
+      market:        string
+      rank:          number
+      score:         string
+      headline:      string | null
+      filings_count: number | null
     }>(sql`
-      SELECT market, rank, score::float AS score, headline
+      SELECT market, rank, score::float AS score, headline, filings_count
       FROM market_salience
       WHERE docket_key = ${externalId}
-        AND week_start >= (CURRENT_DATE - INTERVAL '14 days')::date
-      ORDER BY week_start DESC, score DESC
-      LIMIT 1
+        AND week_start >= (CURRENT_DATE - INTERVAL '28 days')::date
+      ORDER BY week_start DESC
+      LIMIT 2
     `)
-    const r = rows[0]
-    if (!r) return null
+    const cur = rows[0]
+    if (!cur) return null
+    const prev = rows[1] ?? null
+
+    let trend: DocketSalience["trend"] = null
+    let filingsMultiple: number | null = null
+    if (prev) {
+      const cs = Number(cur.score), ps = Number(prev.score)
+      if (ps > 0) {
+        if (cs >= ps * 1.2)      trend = "accelerating"
+        else if (cs <= ps * 0.8) trend = "cooling"
+        else                     trend = "steady"
+      }
+      const cf = Number(cur.filings_count ?? 0), pf = Number(prev.filings_count ?? 0)
+      if (pf > 0 && cf >= pf * 2) filingsMultiple = Math.round(cf / pf)
+    }
+
     return {
-      market:   r.market,
-      rank:     Number(r.rank),
-      score:    Number(r.score),
-      headline: r.headline ?? null,
+      market:          cur.market,
+      rank:            Number(cur.rank),
+      score:           Number(cur.score),
+      headline:        cur.headline ?? null,
+      trend,
+      filingsMultiple,
     }
   } catch {
     return null
