@@ -6,7 +6,8 @@ import { and, eq } from "drizzle-orm"
 import { createHash } from "node:crypto"
 import { auth } from "@/lib/auth"
 import { db } from "@/db/client"
-import { watchedThemes, discoveryDismissals, themeRequests, adminActions } from "@/db/schema"
+import { watchedThemes, themeRequests, adminActions } from "@/db/schema"
+import { reportExtractionIssue } from "@/lib/feedback/actions"
 import type { Result } from "@/lib/types"
 
 // Subscribe the current user to a curated theme (by stable key).
@@ -39,23 +40,20 @@ export async function removeWatchedTheme(themeKey: string): Promise<Result<void>
 }
 
 // "Not relevant" — hides the item for this user AND feeds matcher tuning later.
+// B4: now writes to the unified extraction_feedback store (item_type='discovery',
+// hides_item=true). The read path excludes via that store, so prior B3 dismissals
+// (folded forward in migration 0010) keep hiding.
 export async function dismissDiscoveryItem(
   accession: string,
   reason?: string,
 ): Promise<Result<void>> {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session) return { ok: false, error: "Unauthenticated" }
-
-  const acc = accession.trim()
-  if (!acc) return { ok: false, error: "Missing item" }
-
-  await db
-    .insert(discoveryDismissals)
-    .values({ userId: session.user.id, accession: acc, reason: reason?.trim() || null })
-    .onConflictDoNothing()
-
-  revalidatePath("/discovery")
-  return { ok: true, value: undefined }
+  return reportExtractionIssue({
+    itemType:   "discovery",
+    itemRef:    accession,
+    reason,
+    hides:      true,
+    revalidate: "/discovery",
+  })
 }
 
 // "Request a theme" — does NOT classify per-user; captures demand for manual

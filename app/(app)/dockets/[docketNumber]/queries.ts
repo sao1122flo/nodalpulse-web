@@ -2,6 +2,7 @@ import { db } from "@/db/client"
 import { dockets, filings, extractions, userDockets, filingDockets } from "@/db/schema"
 import { and, eq, asc, desc, isNotNull, count, inArray, ne, sql } from "drizzle-orm"
 import { bestSourceLink, isBrokenFercSearchUrl, fercAccessionUrl } from "@/lib/ferc-links"
+import { groupConditionalDeadlines } from "@/lib/deadline-grouping"
 import type { LinkedDocket } from "@/app/(app)/dashboard/queries"
 
 // Re-export so the page has a single import surface for the cross-jurisdiction type.
@@ -103,13 +104,14 @@ export interface RecordFiling {
 export async function getDocketFilingsPage(docketId: string, limit: number): Promise<RecordFiling[]> {
   const rows = await db
     .select({
-      id:        filings.id,
-      title:     filings.title,
-      docType:   filings.docType,
-      filer:     filings.filer,
-      filedAt:   filings.filedAt,
-      sourceUrl: filings.sourceUrl,
-      payload:   extractions.payload,
+      id:         filings.id,
+      title:      filings.title,
+      docType:    filings.docType,
+      filer:      filings.filer,
+      filedAt:    filings.filedAt,
+      sourceUrl:  filings.sourceUrl,
+      externalId: filings.externalId,
+      payload:    extractions.payload,
     })
     .from(filings)
     .leftJoin(extractions, eq(extractions.filingId, filings.id))
@@ -123,7 +125,11 @@ export async function getDocketFilingsPage(docketId: string, limit: number): Pro
     docType:   r.docType,
     filer:     r.filer,
     filedAt:   r.filedAt,
-    sourceUrl: r.sourceUrl,
+    // B4 verify-link parity: port the deadline fallback to the timeline — a real
+    // source_url, else the FERC accession filelist link (filing external_id IS the
+    // accession). Broken eLibrary ?q= search URLs are skipped. Non-FERC filings
+    // with no source_url stay null (rendered as unlinked text — not a number/date).
+    sourceUrl: bestSourceLink(null, r.sourceUrl, r.externalId),
     summary:   r.payload?.summary ?? null,
   }))
 }
@@ -232,6 +238,7 @@ export interface RecordDeadline {
   mentionCount: number
   daysRemaining: number
   actor:        string | null   // who must act (prompt_ver 1.6+); null on older extractions
+  conditional?: string | null   // B4: with/without-hearing conditional note (else null)
 }
 
 // Treat blank/whitespace-only strings as "no link" — extraction payloads carry
@@ -364,8 +371,10 @@ export async function getDocketDeadlines(docketId: string, today: string): Promi
     }
   }
 
-  return merged
-    .map(({ _tokens, ...d }) => d)
+  // B4: collapse with/without-hearing conditional variants (cross-date) to one
+  // row headlining the earlier date, with a note for the conditional later date.
+  const flat = merged.map(({ _tokens, ...d }) => d)
+  return groupConditionalDeadlines(flat, () => docketId)
     .sort((a, b) => a.daysRemaining - b.daysRemaining)
 }
 

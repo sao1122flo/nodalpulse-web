@@ -5,6 +5,7 @@ import Link from "next/link"
 import { auth } from "@/lib/auth"
 import { getEntitlements } from "@/lib/entitlements"
 import { getQnaUsage } from "@/lib/services-client"
+import { getReportedRefs } from "@/lib/feedback/queries"
 import { JURISDICTION_TO_MARKET } from "@/app/(app)/dashboard/queries"
 import {
   JurisdictionBadge,
@@ -230,14 +231,16 @@ export default async function DocketRecordPage({
   const today = new Date().toISOString().slice(0, 10)
   const filingLimit = showAllFilings ? FILINGS_ALL : FILINGS_DEFAULT
 
-  const [filings, parties, deadlines, linkedDockets, salience, qnaUsage] = await Promise.all([
-    getDocketFilingsPage(docket.id, filingLimit),
-    getDocketParties(docket.id),
-    getDocketDeadlines(docket.id, today),
-    getLinkedDockets(docket.id),
-    getDocketSalience(docket.externalId),
-    getQnaUsage(session.user.id),
-  ])
+  const [filings, parties, deadlines, linkedDockets, salience, qnaUsage, reportedDeadlineRefs] =
+    await Promise.all([
+      getDocketFilingsPage(docket.id, filingLimit),
+      getDocketParties(docket.id),
+      getDocketDeadlines(docket.id, today),
+      getLinkedDockets(docket.id),
+      getDocketSalience(docket.externalId),
+      getQnaUsage(session.user.id),
+      getReportedRefs(session.user.id, "deadline"),
+    ])
 
   const qnaLimitPerDay = ents.qa.limitPerDay ?? 0
   const qnaUsedToday   = qnaUsage.ok ? qnaUsage.value.used_today : 0
@@ -293,7 +296,7 @@ export default async function DocketRecordPage({
           {deadlines.length > 0 && (
             <section>
               <SectionLabel>Upcoming deadlines</SectionLabel>
-              <RecordDeadlines docketNumber={dn} deadlines={deadlines} />
+              <RecordDeadlines docketNumber={dn} deadlines={deadlines} reportedRefs={reportedDeadlineRefs} />
             </section>
           )}
 

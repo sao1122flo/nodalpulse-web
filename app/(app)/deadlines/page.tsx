@@ -9,6 +9,7 @@ import {
   getDeadlines,
   jurisdictionsForMarkets,
 } from "@/app/(app)/dashboard/queries"
+import { getReportedRefs } from "@/lib/feedback/queries"
 import { entitledMarketChips } from "./filters"
 import { DeadlinesClient } from "./DeadlinesClient"
 
@@ -50,8 +51,18 @@ export default async function DeadlinesPage() {
     )
   }
 
-  const deadlines = await getDeadlines(docketIds, entitledJurisdictions, today, DEADLINES_LIMIT)
+  const [deadlines, reportedRefs] = await Promise.all([
+    getDeadlines(docketIds, entitledJurisdictions, today, DEADLINES_LIMIT),
+    getReportedRefs(session.user.id, "deadline"),
+  ])
   const marketChips = entitledMarketChips(ents.marketAccess)
 
-  return <DeadlinesClient deadlines={deadlines} marketChips={marketChips} today={today} />
+  return (
+    <DeadlinesClient
+      deadlines={deadlines}
+      marketChips={marketChips}
+      today={today}
+      reportedRefs={reportedRefs}
+    />
+  )
 }

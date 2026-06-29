@@ -10,6 +10,7 @@ import {
 } from "@/db/schema"
 import { and, eq, inArray, notInArray, desc, gte, sql, isNotNull } from "drizzle-orm"
 import { bestSourceLink, isBrokenFercSearchUrl, fercAccessionUrl } from "@/lib/ferc-links"
+import { groupConditionalDeadlines } from "@/lib/deadline-grouping"
 
 // ---------------------------------------------------------------------------
 // Types
@@ -35,6 +36,10 @@ export interface DashboardDeadline {
   verifyUrl: string | null
   daysRemaining: number
   mentionCount: number
+  // B4: when a deadline has complementary with/without-hearing variants on
+  // different dates, they collapse to one row headlining the earlier date and
+  // this note explains the conditional later date. null for ordinary deadlines.
+  conditional?: string | null
   // 2b: distinguishes filing-extracted deadlines from market_events calendar
   // entries. market_events get a "Market event" chip (no Record-page link) and
   // are treated as confirmed (authoritative calendar dates, not extractions).
@@ -391,8 +396,12 @@ export async function getDeadlines(
     }
   }
 
+  // B4: collapse with/without-hearing conditional variants (cross-date) to one
+  // row before the final sort. market_events / ordinary deadlines pass through.
+  const grouped = groupConditionalDeadlines(result, d => d.docketId)
+
   // Cap after global sort — keeps the strip bounded regardless of tracking breadth.
-  return result.sort((a, b) => a.daysRemaining - b.daysRemaining).slice(0, limit)
+  return grouped.sort((a, b) => a.daysRemaining - b.daysRemaining).slice(0, limit)
 }
 
 // ---------------------------------------------------------------------------

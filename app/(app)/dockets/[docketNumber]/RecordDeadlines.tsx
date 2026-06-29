@@ -2,7 +2,9 @@
 
 import { useState } from "react"
 import type { RecordDeadline } from "./queries"
-import { ReportIssueButton } from "./ReportIssueButton"
+import { ConfidenceBadge } from "@/app/(app)/components/ConfidenceBadge"
+import { ReportFlagButton } from "@/app/(app)/components/ReportFlagButton"
+import { deadlineFeedbackRef } from "@/lib/feedback/ref"
 
 const DEADLINE_TYPE_LABELS: Record<string, string> = {
   hearing:          "Hearing",
@@ -44,10 +46,12 @@ const INITIAL = 6
 interface Props {
   docketNumber: string
   deadlines:    RecordDeadline[]
+  reportedRefs: string[]
 }
 
-export function RecordDeadlines({ docketNumber, deadlines }: Props) {
+export function RecordDeadlines({ docketNumber, deadlines, reportedRefs }: Props) {
   const [expanded, setExpanded] = useState(false)
+  const reportedSet = new Set(reportedRefs)
 
   if (deadlines.length === 0) return null
 
@@ -58,6 +62,12 @@ export function RecordDeadlines({ docketNumber, deadlines }: Props) {
     <div className="flex flex-col gap-2">
       {visible.map((dl, i) => {
         const typeLabel = DEADLINE_TYPE_LABELS[dl.type] ?? "Deadline"
+        const feedbackRef = deadlineFeedbackRef({
+          docketExternalId: docketNumber,
+          date:             dl.date,
+          type:             dl.type,
+          description:      dl.description,
+        })
         return (
           <div
             key={`${dl.date}:${dl.type}:${i}`}
@@ -78,16 +88,8 @@ export function RecordDeadlines({ docketNumber, deadlines }: Props) {
                     {typeLabel}
                   </span>
 
-                  {/* Confidence — confirmed vs estimated, visually distinct */}
-                  {dl.estimated ? (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-[rgba(251,191,36,0.12)] text-[#B45309] border border-[rgba(251,191,36,0.35)]">
-                      est.
-                    </span>
-                  ) : (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-[rgba(34,197,94,0.10)] text-[var(--np-success)] border border-[rgba(34,197,94,0.30)]">
-                      confirmed
-                    </span>
-                  )}
+                  {/* Confidence — confirmed vs estimated (shared convention) */}
+                  <ConfidenceBadge estimated={dl.estimated} />
 
                   {dl.mentionCount > 1 && (
                     <span
@@ -102,6 +104,11 @@ export function RecordDeadlines({ docketNumber, deadlines }: Props) {
                 <p className="text-[13px] text-[var(--np-text-body)] leading-snug">
                   {dl.description}
                 </p>
+                {dl.conditional && (
+                  <p className="text-[11px] text-[var(--np-text-muted)] mt-0.5 leading-snug">
+                    ↳ {dl.conditional}
+                  </p>
+                )}
                 {dl.actor && (
                   <p className="text-[11px] text-[var(--np-text-muted)] mt-0.5">
                     {dl.actor}
@@ -127,10 +134,11 @@ export function RecordDeadlines({ docketNumber, deadlines }: Props) {
                 </a>
               )}
               <div className="mt-0.5">
-                <ReportIssueButton
-                  docketNumber={docketNumber}
-                  section="deadline"
-                  detail={`${dl.date} · ${dl.description.slice(0, 80)}`}
+                <ReportFlagButton
+                  itemType="deadline"
+                  itemRef={feedbackRef}
+                  docketRef={docketNumber}
+                  initiallyReported={reportedSet.has(feedbackRef)}
                 />
               </div>
             </div>

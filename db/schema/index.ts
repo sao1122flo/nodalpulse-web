@@ -389,6 +389,35 @@ export const themeRequests = pgTable(
 )
 
 // ---------------------------------------------------------------------------
+// extraction_feedback — B4 unified data-quality store. One row per (user, item).
+// Replaces the per-surface report patterns going forward: discovery "not relevant"
+// (item_type='discovery', hides_item=true) and deadline/fact "report issue"
+// (item_type='deadline'|'fact'|…, hides_item=false → flagged but still visible —
+// the quality layer must never cause a miss). item_ref is a stable identity:
+// FERC accession for discovery, or a deadline identity hash for deadlines.
+// References services-owned rows by text key — no cross-repo FK.
+// ---------------------------------------------------------------------------
+export const extractionFeedback = pgTable(
+  "extraction_feedback",
+  {
+    id:        uuid("id").defaultRandom().primaryKey(),
+    userId:    uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    itemType:  text("item_type").notNull(),        // deadline|party|theme|discovery|extraction|fact
+    itemRef:   text("item_ref").notNull(),         // accession / deadline hash / docket external id
+    docketRef: text("docket_ref"),                 // optional docket external id (QA grouping)
+    reason:    text("reason"),                      // short code or free text
+    note:      text("note"),                        // optional longer note
+    hidesItem: boolean("hides_item").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    unique("extraction_feedback_user_item_unique").on(t.userId, t.itemType, t.itemRef),
+    index("idx_extraction_feedback_user_id").on(t.userId),
+    index("idx_extraction_feedback_type").on(t.itemType),
+  ],
+)
+
+// ---------------------------------------------------------------------------
 // digest_leads — public digest email subscribers (#122)
 // ---------------------------------------------------------------------------
 export const digestLeads = pgTable(
