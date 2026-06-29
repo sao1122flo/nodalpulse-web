@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation"
 import { headers } from "next/headers"
 import Link from "next/link"
-import { LayoutDashboard, Archive, BookOpen, CalendarClock, MessageSquare, Settings } from "lucide-react"
+import { LayoutDashboard, Archive, BookOpen, CalendarClock, Compass, MessageSquare, Settings } from "lucide-react"
 import { auth } from "@/lib/auth"
 import { db } from "@/db/client"
 import { userProfiles } from "@/db/schema"
@@ -14,6 +14,7 @@ import { AppClientShell } from "./components/AppClientShell"
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/deadlines", label: "Deadlines", icon: CalendarClock },
+  { href: "/discovery", label: "Discovery", icon: Compass },
   { href: "/briefs", label: "Brief History", icon: Archive },
   { href: "/dockets", label: "Dockets", icon: BookOpen },
   { href: "/chat", label: "Ask the Record", icon: MessageSquare },

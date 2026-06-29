@@ -333,6 +333,62 @@ export const watchedEntities = pgTable(
 )
 
 // ---------------------------------------------------------------------------
+// watched_themes — per-user subscription to a shared curated theme (B3).
+// References the services-owned `themes` taxonomy by its stable `key` slug
+// (no cross-repo FK). Web owns writes; services classification is global.
+// ---------------------------------------------------------------------------
+export const watchedThemes = pgTable(
+  "watched_themes",
+  {
+    id:        uuid("id").defaultRandom().primaryKey(),
+    userId:    uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    themeKey:  text("theme_key").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    unique("watched_themes_user_theme_unique").on(t.userId, t.themeKey),
+    index("idx_watched_themes_user_id").on(t.userId),
+  ],
+)
+
+// ---------------------------------------------------------------------------
+// discovery_dismissals — per-user "not relevant" on a discovery_feed item (B3).
+// References discovery_feed by accession (services-owned; no cross-repo FK).
+// Hides the item AND feeds matcher tuning.
+// ---------------------------------------------------------------------------
+export const discoveryDismissals = pgTable(
+  "discovery_dismissals",
+  {
+    id:        uuid("id").defaultRandom().primaryKey(),
+    userId:    uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    accession: text("accession").notNull(),
+    reason:    text("reason"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    unique("discovery_dismissals_user_accession_unique").on(t.userId, t.accession),
+    index("idx_discovery_dismissals_user_id").on(t.userId),
+  ],
+)
+
+// ---------------------------------------------------------------------------
+// theme_requests — user asks for a theme we don't curate yet (B3). Does NOT
+// classify per-user; we curate manually. Captures demand signal.
+// ---------------------------------------------------------------------------
+export const themeRequests = pgTable(
+  "theme_requests",
+  {
+    id:        uuid("id").defaultRandom().primaryKey(),
+    userId:    uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    label:     text("label").notNull(),
+    note:      text("note"),
+    status:    text("status").notNull().default("new"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index("idx_theme_requests_user_id").on(t.userId)],
+)
+
+// ---------------------------------------------------------------------------
 // digest_leads — public digest email subscribers (#122)
 // ---------------------------------------------------------------------------
 export const digestLeads = pgTable(
