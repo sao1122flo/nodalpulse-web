@@ -5,6 +5,9 @@ import Link from "next/link"
 import { ExternalLink } from "lucide-react"
 import type { DashboardDeadline } from "@/app/(app)/dashboard/queries"
 import { JurisdictionBadge } from "@/app/(app)/dashboard/components/JurisdictionBadge"
+import { ConfidenceBadge } from "@/app/(app)/components/ConfidenceBadge"
+import { ReportFlagButton } from "@/app/(app)/components/ReportFlagButton"
+import { deadlineFeedbackRef } from "@/lib/feedback/ref"
 import {
   BUCKET_ORDER,
   BUCKET_LABEL,
@@ -36,28 +39,31 @@ function formatDate(iso: string, currentYear: string): string {
   return new Date(iso + "T12:00:00Z").toLocaleDateString("en-US", opts)
 }
 
-function ConfidenceBadge({ estimated }: { estimated: boolean }) {
-  if (estimated) {
-    return (
-      <span className="text-[10px] px-1.5 py-0.5 rounded bg-[rgba(251,191,36,0.12)] text-[#B45309] border border-[rgba(251,191,36,0.35)]">
-        est
-      </span>
-    )
-  }
-  return (
-    <span className="text-[10px] px-1.5 py-0.5 rounded bg-[rgba(34,197,94,0.10)] text-[var(--np-success)] border border-[rgba(34,197,94,0.30)]">
-      confirmed
-    </span>
-  )
-}
-
-function DeadlineRow({ dl, currentYear }: { dl: DashboardDeadline; currentYear: string }) {
+function DeadlineRow({
+  dl,
+  currentYear,
+  reportedRefs,
+}: {
+  dl: DashboardDeadline
+  currentYear: string
+  reportedRefs: Set<string>
+}) {
   const typeLabel = DEADLINE_TYPE_LABELS[dl.type] ?? "Deadline"
   const isMarketEvent = dl.kind === "market_event"
   const docketHref =
     !isMarketEvent && dl.docketExternalId
       ? `/dockets/${encodeURIComponent(dl.docketExternalId)}`
       : null
+  // Filing deadlines (extractions) get a report affordance; market_events are
+  // authoritative calendar dates, not extractions — nothing to report.
+  const feedbackRef = isMarketEvent
+    ? null
+    : deadlineFeedbackRef({
+        docketExternalId: dl.docketExternalId,
+        date:             dl.date,
+        type:             dl.type,
+        description:      dl.description,
+      })
 
   return (
     <div
@@ -92,6 +98,13 @@ function DeadlineRow({ dl, currentYear }: { dl: DashboardDeadline; currentYear: 
             {dl.description}
           </p>
 
+          {/* B4: conditional with/without-hearing note (collapsed variants) */}
+          {dl.conditional && (
+            <p className="text-[11px] text-[var(--np-text-muted)] mt-0.5 leading-snug">
+              ↳ {dl.conditional}
+            </p>
+          )}
+
           {/* Subtitle: docket chip (→ Record page) or market-event chip · date */}
           <div className="flex flex-wrap items-center gap-1.5 mt-1 text-[11px] min-w-0">
             {isMarketEvent ? (
@@ -123,8 +136,8 @@ function DeadlineRow({ dl, currentYear }: { dl: DashboardDeadline; currentYear: 
         </div>
       </div>
 
-      {/* Right: source link (P0 — guaranteed present for filing rows) */}
-      <div className="flex-shrink-0">
+      {/* Right: source link (P0 — guaranteed present for filing rows) + report */}
+      <div className="flex-shrink-0 flex flex-col items-end gap-1.5">
         {dl.verifyUrl && (
           <a
             href={dl.verifyUrl}
@@ -136,17 +149,26 @@ function DeadlineRow({ dl, currentYear }: { dl: DashboardDeadline; currentYear: 
             <ExternalLink size={14} />
           </a>
         )}
+        {feedbackRef && (
+          <ReportFlagButton
+            itemType="deadline"
+            itemRef={feedbackRef}
+            docketRef={dl.docketExternalId}
+            initiallyReported={reportedRefs.has(feedbackRef)}
+          />
+        )}
       </div>
     </div>
   )
 }
 
 interface Props {
-  deadlines: DashboardDeadline[]
-  today:     string
+  deadlines:    DashboardDeadline[]
+  today:        string
+  reportedRefs: Set<string>
 }
 
-export function DeadlineList({ deadlines, today }: Props) {
+export function DeadlineList({ deadlines, today, reportedRefs }: Props) {
   const [showAllLater, setShowAllLater] = useState(false)
   const currentYear = today.slice(0, 4)
 
@@ -182,7 +204,12 @@ export function DeadlineList({ deadlines, today }: Props) {
             </h3>
             <div className="flex flex-col gap-2">
               {visible.map((dl, i) => (
-                <DeadlineRow key={`${dl.docketId}:${dl.date}:${dl.type}:${i}`} dl={dl} currentYear={currentYear} />
+                <DeadlineRow
+                  key={`${dl.docketId}:${dl.date}:${dl.type}:${i}`}
+                  dl={dl}
+                  currentYear={currentYear}
+                  reportedRefs={reportedRefs}
+                />
               ))}
             </div>
             {isLater && hidden > 0 && (

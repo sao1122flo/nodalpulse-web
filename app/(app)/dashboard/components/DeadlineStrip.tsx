@@ -4,6 +4,7 @@ import { useState } from "react"
 import Link from "next/link"
 import type { DashboardDeadline } from "../queries"
 import { JurisdictionBadge } from "./JurisdictionBadge"
+import { ConfidenceBadge } from "@/app/(app)/components/ConfidenceBadge"
 
 const DEADLINE_TYPE_LABELS: Record<string, string> = {
   hearing:           "Hearing",
@@ -94,11 +95,7 @@ export function DeadlineStrip({ deadlines }: Props) {
                   {dl.jurisdiction && (
                     <JurisdictionBadge jurisdiction={dl.jurisdiction} />
                   )}
-                  {dl.estimated && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-[rgba(251,191,36,0.12)] text-[#FCD34D] border border-[rgba(251,191,36,0.35)]">
-                      est.
-                    </span>
-                  )}
+                  <ConfidenceBadge estimated={dl.estimated} estOnly />
                   {dl.mentionCount > 1 && (
                     <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--np-surface-deep)] text-[var(--np-text-muted)] border border-[var(--np-border)]">
                       {dl.mentionCount} filings

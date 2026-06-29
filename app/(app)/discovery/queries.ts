@@ -88,9 +88,11 @@ export async function getDiscoveryThemeFeed(
               AND d.external_id = ANY(df.docket_numbers)
         )
         AND NOT EXISTS (
-            SELECT 1 FROM discovery_dismissals dd
-            WHERE dd.user_id = ${userId}::uuid
-              AND dd.accession = df.accession
+            SELECT 1 FROM extraction_feedback ef
+            WHERE ef.user_id = ${userId}::uuid
+              AND ef.item_type = 'discovery'
+              AND ef.hides_item
+              AND ef.item_ref = df.accession
         )
       GROUP BY df.id, df.accession, df.description, df.doc_type, df.docket_numbers, df.filed_at
       ORDER BY df.filed_at DESC

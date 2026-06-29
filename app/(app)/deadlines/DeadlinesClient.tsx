@@ -16,9 +16,10 @@ import {
 } from "./filters"
 
 interface Props {
-  deadlines:   DashboardDeadline[]
-  marketChips: MarketChip[]
-  today:       string
+  deadlines:    DashboardDeadline[]
+  marketChips:  MarketChip[]
+  today:        string
+  reportedRefs: string[]
 }
 
 function Chip({
@@ -45,11 +46,13 @@ function Chip({
   )
 }
 
-export function DeadlinesClient({ deadlines, marketChips, today }: Props) {
+export function DeadlinesClient({ deadlines, marketChips, today, reportedRefs }: Props) {
   const [market, setMarket]               = useState<string>("all")
   const [type, setType]                   = useState<TypeFilter>("all")
   const [showEstimated, setShowEstimated] = useState(true)
   const [selectedDay, setSelectedDay]     = useState<string | null>(null)
+
+  const reportedSet = useMemo(() => new Set(reportedRefs), [reportedRefs])
 
   // Market + type + estimated filters. Drives the calendar dots AND the ICS
   // export (spec: export respects these three, NOT the day drill-down).
@@ -160,7 +163,7 @@ export function DeadlinesClient({ deadlines, marketChips, today }: Props) {
       </div>
 
       {/* ── List (grouped by urgency) ── */}
-      <DeadlineList deadlines={listItems} today={today} />
+      <DeadlineList deadlines={listItems} today={today} reportedRefs={reportedSet} />
 
       {/* ── Calendar ── */}
       <section className="mt-12 pt-8 border-t border-[var(--np-border)]">
