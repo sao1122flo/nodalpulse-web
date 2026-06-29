@@ -111,4 +111,36 @@ describe("groupConditionalDeadlines", () => {
     // Same base + complementary signs but DIFFERENT dockets → not merged.
     expect(out).toHaveLength(2)
   })
+
+  it("collapses a same-date terse + combined restatement (the live A2508008 case)", () => {
+    // Row 2 carries BOTH conditions in one clause (sign reads as 'without'), so
+    // there's no complementary pair — but same docket+type+date+base ⇒ same
+    // deadline. Keep the fullest phrasing, no note.
+    const out = groupConditionalDeadlines(
+      [
+        mk("A2508008", "2026-07-01", "Opening briefs due (if no evidentiary hearing)"),
+        mk("A2508008", "2026-07-01", "Opening Briefs due (with evidentiary hearings: August 2026; without: July 1, 2026)"),
+      ],
+      keyOf,
+    )
+    expect(out).toHaveLength(1)
+    expect(out[0].date).toBe("2026-07-01")
+    expect(out[0].description).toMatch(/with evidentiary hearings/i) // fullest wording
+    expect(out[0].conditional ?? null).toBeNull() // same date → no cross-date note
+  })
+
+  it("collapses the live A2508008 future-dated set from 5 rows to 3", () => {
+    const rows: Item[] = [
+      mk("A2508008", "2026-07-01", "Opening briefs due (if no evidentiary hearing)"),
+      mk("A2508008", "2026-07-01", "Opening Briefs due (with evidentiary hearings: August 2026; without: July 1, 2026)"),
+      mk("A2508008", "2026-07-13", "Evidentiary hearing (if needed), between July 13 and July 31, 2026", { type: "hearing" }),
+      mk("A2508008", "2026-07-21", "Reply briefs due (if no evidentiary hearing)"),
+      mk("A2508008", "2026-07-21", "Reply Briefs due / Matter Submitted (with evidentiary hearings: September 2026; without: July 21, 2026)"),
+    ]
+    const out = groupConditionalDeadlines(rows, keyOf)
+    expect(out).toHaveLength(3)
+    expect(out.filter(d => /^opening/i.test(d.description))).toHaveLength(1)
+    expect(out.filter(d => /^reply/i.test(d.description))).toHaveLength(1)
+    expect(out.filter(d => /evidentiary hearing/i.test(d.description) && d.type === "hearing")).toHaveLength(1)
+  })
 })
