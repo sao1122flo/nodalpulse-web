@@ -9,6 +9,7 @@ const JURISDICTION_TO_MKT: Record<string, string> = {
   PJM:         "pjm",
   "PJM-FERC":  "pjm",
   "NJ-BPU":    "pjm",   // NJ state PUC — PJM region (reuses PJM palette)
+  "MD-PSC":    "pjm",   // MD state PUC — PJM region (reuses PJM palette)
   PUCT:        "puct",
   ERCOT:       "ercot",
 }
@@ -21,6 +22,7 @@ const JURISDICTION_LABEL: Record<string, string> = {
   PJM:         "PJM",
   "PJM-FERC":  "PJM",
   "NJ-BPU":    "NJ",    // per-state label — show the state, never the bare market "PJM"
+  "MD-PSC":    "MD",    // per-state label — show the state, never the bare market "PJM"
   PUCT:        "PUCT",
   ERCOT:       "ERCOT",
 }
