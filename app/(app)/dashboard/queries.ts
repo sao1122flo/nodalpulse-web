@@ -99,7 +99,8 @@ export const MARKET_TO_JURISDICTIONS: Record<string, string[]> = {
   // by the daily crawl.  v1 limitation: an ER/EL docket defaults to 'FERC'; it
   // shows under both chips rather than the precise one.  Tracked in #87.
   CAISO: ["CAISO-FERC", "CAISO", "CPUC", "FERC"],
-  PJM:   ["PJM-FERC", "PJM", "FERC"],
+  // NJ-BPU (New Jersey state PUC) is geographically PJM — a PJM subscriber sees it.
+  PJM:   ["PJM-FERC", "PJM", "NJ-BPU", "FERC"],
   FERC:  ["FERC"],
 }
 
@@ -111,6 +112,7 @@ export const JURISDICTION_TO_MARKET: Record<string, string> = {
   CPUC:       "CAISO",
   "PJM-FERC": "PJM",
   PJM:        "PJM",
+  "NJ-BPU":   "PJM",
   FERC:       "FERC",
 }
 

@@ -17,6 +17,7 @@ const JURISDICTION_TO_MARKET: Record<string, string> = {
   CPUC:         "CAISO",
   "PJM-FERC":   "PJM",
   PJM:          "PJM",
+  "NJ-BPU":     "PJM",
   FERC:         "FERC",
 }
 
