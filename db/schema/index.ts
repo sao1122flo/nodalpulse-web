@@ -259,6 +259,10 @@ export const dockets = pgTable("dockets", {
   openedAt:     date("opened_at"),
   closedAt:     date("closed_at"),
   metadata:     jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+  // Durable "a crawl covering this docket completed at T" signal (services stamps it,
+  // incl. on a 0-result on-demand crawl). Distinguishes crawled-empty (→ No filings yet)
+  // from never-crawled/in-flight (→ Assembling) for the Record page warming states.
+  lastCrawledAt: timestamp("last_crawled_at", { withTimezone: true }),
   createdAt:    timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt:    timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 })

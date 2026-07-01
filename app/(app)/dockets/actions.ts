@@ -4,15 +4,11 @@ import { revalidatePath } from "next/cache"
 import { headers } from "next/headers"
 import { auth } from "@/lib/auth"
 import { db } from "@/db/client"
-import { userDockets, dockets, filings, extractions } from "@/db/schema"
-import { and, count, eq, desc, sql, isNotNull, inArray } from "drizzle-orm"
+import { userDockets, dockets } from "@/db/schema"
+import { and, count, eq, isNotNull, inArray } from "drizzle-orm"
 import type { Result } from "@/lib/types"
 import { crawlOnDemand, refreshDocket } from "@/lib/services-client"
 import { getEntitlements } from "@/lib/entitlements"
-
-// PUCT source UUID — stable, seeded by services on startup.
-// Only used for creating NEW PUCT dockets that haven't been crawled yet.
-const PUCT_SOURCE_ID = "0725032a-239f-475d-bdd5-251adad3ae05"
 
 // Source UUIDs for non-PUCT on-demand docket creation (mirrors services sources table).
 const NON_PUCT_SOURCE_IDS: Record<string, string> = {
@@ -103,48 +99,23 @@ export async function trackDocket({
       }
     }
     docketRow = existingDocket
-  } else if (/^\d+$/.test(dn)) {
-    // Docket not indexed yet — only accept all-digit PUCT control numbers for on-demand creation.
-    if (!ents.marketAccess.includes("PUCT")) {
-      return { ok: false, error: "Your plan does not include access to this market. See /pricing for details." }
-    }
-
-    const [labelRow] = await db
-      .select({ title: filings.title })
-      .from(extractions)
-      .innerJoin(filings, eq(extractions.filingId, filings.id))
-      .where(sql`${extractions.payload}->>'docket_number' = ${dn}`)
-      .orderBy(desc(filings.filedAt))
-      .limit(1)
-
-    await db
-      .insert(dockets)
-      .values({
-        sourceId:   PUCT_SOURCE_ID,
-        externalId: dn,
-        title:      labelRow?.title ?? null,
-        status:     "open",
-        jurisdiction: "PUCT",
-      })
-      .onConflictDoNothing()
-
-    const [created] = await db
-      .select({ id: dockets.id })
-      .from(dockets)
-      .where(and(eq(dockets.sourceId, PUCT_SOURCE_ID), eq(dockets.externalId, dn)))
-      .limit(1)
-
-    if (!created) return { ok: false, error: "Failed to create docket" }
-    docketRow = created
   } else {
-    // Not in index + not all-digit PUCT → attempt format-based on-demand seed.
-    const sourceSlug = detectSourceSlug(dn)
+    // Docket not indexed yet → on-demand seed via services (probe + enqueue backfill).
+    // All-digit → PUCT control number; otherwise detect CPUC/FERC by format. PUCT now
+    // goes through the same on-demand path as CPUC/FERC (previously it only got an empty
+    // stub + refresh-docket, which is exactly why a tracked PUCT docket whose filings
+    // predate the daily crawl window showed a mute empty page — the 58481/58479 bug).
+    const sourceSlug = /^\d+$/.test(dn) ? "puct" : detectSourceSlug(dn)
     if (!sourceSlug) {
       return { ok: false, error: "Unrecognized docket format. Check the number and try again." }
     }
 
-    // Market gate: CPUC requires CAISO; FERC-format requires PJM or CAISO.
-    if (sourceSlug === "cpuc") {
+    // Market gate per source.
+    if (sourceSlug === "puct") {
+      if (!ents.marketAccess.includes("PUCT")) {
+        return { ok: false, error: "Your plan does not include access to this market. See /pricing for details." }
+      }
+    } else if (sourceSlug === "cpuc") {
       if (!ents.marketAccess.includes("CAISO")) {
         return { ok: false, error: "Your plan does not include access to California (CPUC) proceedings. See /pricing for details." }
       }
@@ -154,9 +125,10 @@ export async function trackDocket({
       }
     }
 
-    // Step 1: validate inline + enqueue backfill via services.
-    // Services probes the source (~1-3 s), creates/finds the docket row,
-    // enqueues a parametrized crawl job, and returns the canonical docket_id.
+    // Validate inline + enqueue backfill via services. Services probes the source
+    // (~1-3 s), creates/finds the docket row, enqueues a parametrized crawl job, and
+    // returns the canonical docket_id. For PUCT the job is crawl-puct with
+    // control_numbers (skips L1 date-discovery → full history).
     const onDemandResult = await crawlOnDemand(
       { source_slug: sourceSlug, proceeding_id: dn, user_id: session.user.id },
       15_000,

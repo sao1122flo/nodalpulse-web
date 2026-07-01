@@ -17,9 +17,11 @@ import { TrackButton } from "../TrackButton"
 import { FilingTimeline } from "./FilingTimeline"
 import { RecordDeadlines } from "./RecordDeadlines"
 import { KeyParties } from "./KeyParties"
+import { AssemblingBanner, NoFilingsYet, ProcessingStrip } from "./AssemblyStatus"
 import {
   resolveDocket,
   getDocketMeta,
+  getDocketAssemblyState,
   getDocketFilingsPage,
   getDocketParties,
   getDocketDeadlines,
@@ -227,7 +229,31 @@ export default async function DocketRecordPage({
     )
   }
 
-  // ── Full record ───────────────────────────────────────────────────────────
+  // ── Warming / empty states (derived from durable signals, not the transient
+  // track-time flag; survives reload). Assembling + no-filings-yet replace the body. ──
+  const assembly = await getDocketAssemblyState(docket.id, docket.externalId)
+
+  if (assembly.state === "assembling" || assembly.state === "no-filings-yet") {
+    return (
+      <div className="px-6 md:px-8 py-8 max-w-3xl">
+        <RecordHeader
+          externalId={dn}
+          jurisdiction={docket.jurisdiction}
+          status={docket.status}
+          title={docket.title}
+          meta={gateMeta}
+          track={<TrackButton docketNumber={dn} isTracked={true} />}
+        />
+        {assembly.state === "assembling" ? (
+          <AssemblingBanner />
+        ) : (
+          <NoFilingsYet jurisdiction={docket.jurisdiction} externalId={docket.externalId} />
+        )}
+      </div>
+    )
+  }
+
+  // ── Full record (normal + partial) ─────────────────────────────────────────
   const today = new Date().toISOString().slice(0, 10)
   const filingLimit = showAllFilings ? FILINGS_ALL : FILINGS_DEFAULT
 
@@ -271,6 +297,13 @@ export default async function DocketRecordPage({
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px] gap-8 items-start">
         {/* ── Main column ── */}
         <div className="flex flex-col gap-8 min-w-0">
+          {/* Partial state: filings are here, extraction still running — honest cue that
+              deadlines / parties / salience are on the way. Disappears once settled. */}
+          {assembly.state === "partial" && assembly.processing && (
+            <div>
+              <ProcessingStrip />
+            </div>
+          )}
           {/* What's driving this docket (salience #128) — hero, hidden when no signal */}
           {salience && (
             <div className="rounded-[var(--np-radius-lg)] border border-[var(--np-border)] border-l-2 border-l-[var(--np-success)] bg-[var(--np-surface-elevated)] px-5 py-4">

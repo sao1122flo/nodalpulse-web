@@ -1,5 +1,5 @@
 import { db } from "@/db/client"
-import { dockets, filings, extractions, userDockets, filingDockets } from "@/db/schema"
+import { dockets, filings, extractions, userDockets, filingDockets, jobs } from "@/db/schema"
 import { and, eq, asc, desc, isNotNull, count, inArray, ne, sql } from "drizzle-orm"
 import { bestSourceLink, isBrokenFercSearchUrl, fercAccessionUrl } from "@/lib/ferc-links"
 import { groupConditionalDeadlines } from "@/lib/deadline-grouping"
@@ -84,6 +84,108 @@ export async function getDocketMeta(docketId: string): Promise<DocketMeta> {
     firstFiledAt: row?.firstFiled ? new Date(row.firstFiled) : null,
     lastFiledAt:  row?.lastFiled ? new Date(row.lastFiled) : null,
   }
+}
+
+// ---------------------------------------------------------------------------
+// getDocketAssemblyState — the Record page's warming/empty/partial state, derived
+// ONLY from durable signals (survives reload / new session; never the transient
+// track-time `warming` flag). See NodalPulse-Record-Warming spec.
+//
+//   normal          F>0, all filings extracted
+//   partial         F>0, some extractions pending. processing=true while extraction
+//                   is in flight (recent crawl OR a live extract job); flips to
+//                   processing=false once settled — so "Processing…" is never perpetual.
+//   assembling      F==0 and a crawl is in flight (or just-tracked, within grace)
+//   no-filings-yet  F==0 and a crawl completed (last_crawled_at set) or the grace
+//                   window elapsed — honest empty state, never a perpetual spinner.
+//
+// The crawled-empty vs never-crawled distinction is the whole point: it rides on
+// dockets.last_crawled_at (services stamps it on every covering crawl, incl. 0-result).
+// ---------------------------------------------------------------------------
+
+export type RecordState = "normal" | "partial" | "assembling" | "no-filings-yet"
+
+export interface DocketAssemblyState {
+  state:          RecordState
+  processing:     boolean // partial only: extraction still in flight → show "Processing…"
+  filingCount:    number
+  extractedCount: number
+}
+
+const ASSEMBLY_GRACE_MS = 15 * 60_000 // enqueue→crawl-complete window before we stop waiting
+
+async function hasInflightExtraction(docketId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ n: count() })
+    .from(jobs)
+    .where(
+      and(
+        inArray(jobs.status, ["pending", "running"]),
+        inArray(jobs.kind, ["extract", "refresh-extraction"]),
+        sql`${jobs.payload}->>'filing_id' IN (SELECT id::text FROM filings WHERE docket_id = ${docketId})`,
+      ),
+    )
+  return Number(row?.n ?? 0) > 0
+}
+
+async function hasInflightCrawl(externalId: string): Promise<boolean> {
+  // On-demand crawl payloads carry the ref in a JSON array (control_numbers /
+  // proc_numbers / docket_numbers), so the id appears quoted in the payload text.
+  const [row] = await db
+    .select({ n: count() })
+    .from(jobs)
+    .where(
+      and(
+        inArray(jobs.status, ["pending", "running"]),
+        sql`${jobs.kind} LIKE 'crawl-%'`,
+        sql`${jobs.payload}::text LIKE ${`%"${externalId}"%`}`,
+      ),
+    )
+  return Number(row?.n ?? 0) > 0
+}
+
+export async function getDocketAssemblyState(
+  docketId: string,
+  externalId: string,
+): Promise<DocketAssemblyState> {
+  const [meta] = await db
+    .select({ createdAt: dockets.createdAt, lastCrawledAt: dockets.lastCrawledAt })
+    .from(dockets)
+    .where(eq(dockets.id, docketId))
+    .limit(1)
+
+  const [counts] = await db
+    .select({
+      filingCount:    count(filings.id),
+      extractedCount: sql<number>`count(distinct ${extractions.filingId})`,
+    })
+    .from(filings)
+    .leftJoin(extractions, eq(extractions.filingId, filings.id))
+    .where(eq(filings.docketId, docketId))
+
+  const F = Number(counts?.filingCount ?? 0)
+  const E = Number(counts?.extractedCount ?? 0)
+  const now = Date.now()
+
+  if (F > 0) {
+    if (E >= F) return { state: "normal", processing: false, filingCount: F, extractedCount: E }
+    // Partial: some extractions pending. processing=true only while genuinely in flight
+    // (a live extract job, or a crawl that completed within the grace window and whose
+    // extract jobs are likely still queued). Otherwise settled → drop the spinner (R1).
+    const lcRecent =
+      !!meta?.lastCrawledAt && now - meta.lastCrawledAt.getTime() < ASSEMBLY_GRACE_MS
+    const processing = lcRecent || (await hasInflightExtraction(docketId))
+    return { state: "partial", processing, filingCount: F, extractedCount: E }
+  }
+
+  // F == 0 — assembling vs honest empty.
+  const crawled = meta?.lastCrawledAt != null
+  const ageMs = meta?.createdAt ? now - meta.createdAt.getTime() : Number.MAX_SAFE_INTEGER
+  if (!crawled) {
+    if (ageMs < ASSEMBLY_GRACE_MS || (await hasInflightCrawl(externalId)))
+      return { state: "assembling", processing: false, filingCount: 0, extractedCount: 0 }
+  }
+  return { state: "no-filings-yet", processing: false, filingCount: 0, extractedCount: 0 }
 }
 
 // ---------------------------------------------------------------------------
