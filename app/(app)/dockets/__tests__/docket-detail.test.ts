@@ -31,7 +31,7 @@ vi.mock("../[docketNumber]/queries", () => q)
 vi.mock("@/app/(app)/dashboard/queries", () => ({
   JURISDICTION_TO_MARKET: {
     PUCT: "PUCT", ERCOT: "ERCOT", "CAISO-FERC": "CAISO", CAISO: "CAISO",
-    CPUC: "CAISO", "PJM-FERC": "PJM", PJM: "PJM", "NJ-BPU": "PJM", "MD-PSC": "PJM", FERC: "FERC",
+    CPUC: "CAISO", "PJM-FERC": "PJM", PJM: "PJM", "NJ-BPU": "PJM", "MD-PSC": "PJM", "VA-SCC": "PJM", FERC: "FERC",
   },
 }))
 vi.mock("@/app/(app)/dashboard/components/JurisdictionBadge", () => ({

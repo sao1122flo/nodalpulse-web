@@ -1,5 +1,5 @@
 // Maps jurisdiction DB values to the market token key and display label.
-// Jurisdiction values: PUCT | ERCOT | FERC | CAISO-FERC | CAISO | CPUC | PJM-FERC | PJM | NJ-BPU
+// Jurisdiction values: PUCT | ERCOT | FERC | CAISO-FERC | CAISO | CPUC | PJM-FERC | PJM | NJ-BPU | MD-PSC | VA-SCC
 
 const JURISDICTION_TO_MKT: Record<string, string> = {
   FERC:        "ferc",
@@ -10,6 +10,7 @@ const JURISDICTION_TO_MKT: Record<string, string> = {
   "PJM-FERC":  "pjm",
   "NJ-BPU":    "pjm",   // NJ state PUC — PJM region (reuses PJM palette)
   "MD-PSC":    "pjm",   // MD state PUC — PJM region (reuses PJM palette)
+  "VA-SCC":    "pjm",   // VA state SCC — PJM region (reuses PJM palette)
   PUCT:        "puct",
   ERCOT:       "ercot",
 }
@@ -23,6 +24,7 @@ const JURISDICTION_LABEL: Record<string, string> = {
   "PJM-FERC":  "PJM",
   "NJ-BPU":    "NJ",    // per-state label — show the state, never the bare market "PJM"
   "MD-PSC":    "MD",    // per-state label — show the state, never the bare market "PJM"
+  "VA-SCC":    "VA",    // per-state label — show the state, never the bare market "PJM"
   PUCT:        "PUCT",
   ERCOT:       "ERCOT",
 }

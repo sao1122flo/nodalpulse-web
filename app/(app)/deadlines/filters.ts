@@ -19,6 +19,7 @@ const JURISDICTION_TO_MARKET: Record<string, string> = {
   PJM:          "PJM",
   "NJ-BPU":     "PJM",
   "MD-PSC":     "PJM",
+  "VA-SCC":     "PJM",
   FERC:         "FERC",
 }
 
