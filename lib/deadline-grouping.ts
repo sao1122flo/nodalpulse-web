@@ -83,6 +83,161 @@ interface Entry<T> {
   tokens: Set<string>
 }
 
+// ── Contested-milestone grouping (same date, same theme, different parties) ──
+//
+// Distinct from the conditional (with/without-hearing) grouping above. Parties in
+// a proceeding propose or reference DIFFERENT obligations that converge on the SAME
+// date+theme — e.g. docket 58481, 2026-07-10: "Initial Energization", "Batch Zero
+// IA deadline", "PGRR145 eligibility", "conclude rulemaking", "RPG study acceptance"
+// (11 mentions from Permian Basin / Landmark / Eolic / Sierra Club / Tract). They are
+// NOT the same phrasing, so exact + fuzzy dedup leave them as separate rows; but they
+// ARE the same contested date. We collapse them into ONE "contested milestone" row for
+// the headline while preserving EVERY party's ask verbatim in `positions` — nothing is
+// fused or deleted, so the collapse stays honest even when generous. Theme-gated so a
+// genuinely unrelated same-date obligation never merges in.
+
+export interface DeadlinePosition {
+  description:  string
+  parties:      string[]
+  actor:        string | null
+  link:         string | null
+  estimated:    boolean
+  mentionCount: number
+}
+
+export interface ContestableDeadline extends ConditionalDeadline {
+  parties?:   string[]
+  actor?:     string | null
+  link?:      string | null
+  contested?: boolean
+  positions?: DeadlinePosition[]
+}
+
+// Generic words that must not become the milestone label — leaves domain terms
+// (batch, zero, pgrr145, energization, attestation, …) as the headline signal.
+const LABEL_STOPWORDS = new Set([
+  "deadline", "date", "dates", "proposed", "expected", "referenced", "reference",
+  "target", "recommend", "recommends", "recommended", "urges", "urge", "key",
+  "milestone", "process", "filing", "filed", "filers", "commenters", "commission",
+  "must", "this", "that", "which", "approximately", "begin", "beginning", "under",
+  "section", "related", "complete", "completion", "achieve", "achieved", "subject",
+  "other", "estimated", "within", "before", "after", "have", "been", "with", "without",
+  // dates / generic verbs / quantifiers — never a milestone name.
+  "january", "february", "march", "april", "june", "july", "august", "september",
+  "october", "november", "december", "days", "large", "loads", "load", "projects",
+  "project", "signed", "sign", "execute", "executed", "meet", "revised", "promulgated",
+  "standards", "value", "values", "annual", "annually", "every", "thereafter", "seeking",
+])
+
+function significantTokens(s: string): string[] {
+  return s
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((t) => t.length >= 4 && !/^\d+$/.test(t) && !LABEL_STOPWORDS.has(t))
+}
+
+function titleCaseTerm(s: string): string {
+  return s
+    .split(" ")
+    .map((w) => {
+      if (w === w.toUpperCase()) return w
+      if (/\d/.test(w)) return w.toUpperCase() // acronym-codes: pgrr145 → PGRR145
+      return w.charAt(0).toUpperCase() + w.slice(1)
+    })
+    .join(" ")
+}
+
+// Milestone label. Prefer the most frequent domain BIGRAM (e.g. "Batch Zero",
+// "Financial Security") — two-token terms read as real milestone names; single
+// top-tokens produced awkward "Batch · Zero" / "2027 · January" headlines. Fall back
+// to the top unigram, then the shortest member description, so the headline is always
+// a real phrase from the record, never a synthetic mash-up.
+function milestoneLabel(descriptions: string[]): string {
+  const bi  = new Map<string, number>()
+  const uni = new Map<string, number>()
+  for (const d of descriptions) {
+    const toks = significantTokens(d)
+    for (const t of new Set(toks)) uni.set(t, (uni.get(t) ?? 0) + 1)
+    const seen = new Set<string>()
+    for (let i = 0; i < toks.length - 1; i++) {
+      const bg = `${toks[i]} ${toks[i + 1]}`
+      if (!seen.has(bg)) { seen.add(bg); bi.set(bg, (bi.get(bg) ?? 0) + 1) }
+    }
+  }
+  const pick = (m: Map<string, number>) =>
+    [...m.entries()]
+      .filter(([, n]) => n >= 2)
+      .sort((a, b) => b[1] - a[1] || b[0].length - a[0].length)[0]?.[0]
+  const topBi = pick(bi)
+  if (topBi) return titleCaseTerm(topBi)
+  const topUni = pick(uni)
+  if (topUni) return titleCaseTerm(topUni)
+  const shortest = descriptions.reduce((b, d) => (d.length < b.length ? d : b), descriptions[0])
+  return shortest.length > 72 ? shortest.slice(0, 69).trimEnd() + "…" : shortest
+}
+
+export function groupContestedMilestones<T extends ContestableDeadline>(items: T[]): T[] {
+  const byDate = new Map<string, T[]>()
+  for (const it of items) {
+    const b = byDate.get(it.date)
+    if (b) b.push(it)
+    else byDate.set(it.date, [it])
+  }
+
+  const out: T[] = []
+  for (const group of byDate.values()) {
+    if (group.length < 2) {
+      out.push(...group)
+      continue
+    }
+    // Greedy theme-cluster within the date: a member joins a cluster if it shares
+    // ≥1 significant (domain) token with it — the gate that keeps an unrelated
+    // same-date obligation separate. Party wording diverges, but domain terms recur.
+    const clusters: { members: T[]; tokens: Set<string> }[] = []
+    for (const it of group) {
+      const toks = new Set(significantTokens(it.description))
+      const hit = clusters.find((c) => {
+        for (const t of toks) if (c.tokens.has(t)) return true
+        return false
+      })
+      if (hit) {
+        hit.members.push(it)
+        for (const t of toks) hit.tokens.add(t)
+      } else {
+        clusters.push({ members: [it], tokens: new Set(toks) })
+      }
+    }
+
+    for (const { members } of clusters) {
+      if (members.length < 2) {
+        out.push(members[0])
+        continue
+      }
+      const sorted = [...members].sort((a, b) => b.mentionCount - a.mentionCount)
+      const rep = sorted[0]
+      const positions: DeadlinePosition[] = sorted.map((m) => ({
+        description:  m.description,
+        parties:      m.parties ?? [],
+        actor:        m.actor ?? null,
+        link:         m.link ?? null,
+        estimated:    m.estimated,
+        mentionCount: m.mentionCount,
+      }))
+      out.push({
+        ...rep,
+        description:  milestoneLabel(members.map((m) => m.description)),
+        contested:    true,
+        positions,
+        parties:      [...new Set(sorted.flatMap((m) => m.parties ?? []))],
+        mentionCount: sorted.reduce((n, m) => n + m.mentionCount, 0),
+        estimated:    sorted.every((m) => m.estimated),
+        conditional:  null,
+      })
+    }
+  }
+  return out
+}
+
 export function groupConditionalDeadlines<T extends ConditionalDeadline>(
   items: T[],
   docketKeyOf: (item: T) => string,

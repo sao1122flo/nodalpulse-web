@@ -346,6 +346,12 @@ export default async function DocketRecordPage({
 
         {/* ── Right rail (stacks below main on mobile) ── */}
         <aside className="flex flex-col gap-6 min-w-0">
+          {/* Ask the record — hero action, leads the rail (Task 2 IA reorg) */}
+          <div>
+            <SectionLabel>Ask the record</SectionLabel>
+            <AskTheRecord limitPerDay={qnaLimitPerDay} usedToday={qnaUsedToday} suggestedQuestions={suggestedQuestions} />
+          </div>
+
           {/* Linked across jurisdictions — hidden when none */}
           {linkedDockets.length > 0 && (
             <div className="rounded-[var(--np-radius-lg)] border border-[var(--np-accent)] bg-[var(--np-surface-elevated)] px-5 py-4">
@@ -377,19 +383,10 @@ export default async function DocketRecordPage({
             </div>
           )}
 
-          {/* Key parties */}
+          {/* Key parties — collapsed reference (self-contained collapsible card, Task 2 IA reorg) */}
           {parties.length > 0 && (
-            <div className="rounded-[var(--np-radius-lg)] border border-[var(--np-border)] bg-[var(--np-surface-elevated)] px-5 py-4">
-              <SectionLabel>Key parties</SectionLabel>
-              <KeyParties parties={parties} />
-            </div>
+            <KeyParties parties={parties} />
           )}
-
-          {/* Ask the record */}
-          <div>
-            <SectionLabel>Ask the record</SectionLabel>
-            <AskTheRecord limitPerDay={qnaLimitPerDay} usedToday={qnaUsedToday} suggestedQuestions={suggestedQuestions} />
-          </div>
         </aside>
       </div>
     </div>

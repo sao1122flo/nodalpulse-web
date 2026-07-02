@@ -39,6 +39,14 @@ export async function TrialBanner() {
     Math.ceil((sub.currentPeriodEnd.getTime() - Date.now()) / 86_400_000),
   )
 
+  // Display guard: a real trial is 14 days. An implausibly long remaining window
+  // (comp accounts / a provisioning bug that set a multi-month trial) renders as a
+  // broken-looking "183 days left" countdown — worse than no banner. Suppress the
+  // urgency banner outside the real trial-end window. NOTE: this only fixes the
+  // DISPLAY; the underlying trial length lives in Stripe/subscriptions and is tracked
+  // separately (new signups must be provisioned with a 14-day trial, not months).
+  if (daysLeft > 30) return null
+
   const daysLabel =
     daysLeft === 0
       ? "Your trial ends today"

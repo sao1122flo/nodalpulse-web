@@ -2,7 +2,7 @@ import { db } from "@/db/client"
 import { dockets, filings, extractions, userDockets, filingDockets, jobs } from "@/db/schema"
 import { and, eq, asc, desc, isNotNull, count, inArray, ne, sql } from "drizzle-orm"
 import { bestSourceLink, isBrokenFercSearchUrl, fercAccessionUrl } from "@/lib/ferc-links"
-import { groupConditionalDeadlines } from "@/lib/deadline-grouping"
+import { groupConditionalDeadlines, groupContestedMilestones, type DeadlinePosition } from "@/lib/deadline-grouping"
 import type { LinkedDocket } from "@/app/(app)/dashboard/queries"
 
 // Re-export so the page has a single import surface for the cross-jurisdiction type.
@@ -341,6 +341,12 @@ export interface RecordDeadline {
   daysRemaining: number
   actor:        string | null   // who must act (prompt_ver 1.6+); null on older extractions
   conditional?: string | null   // B4: with/without-hearing conditional note (else null)
+  // Task 1 — contested milestone (same date+theme, multiple parties). When contested,
+  // `description` is the derived milestone label and `positions` holds every party's
+  // ask verbatim; `parties` is the union of filers who proposed/referenced this date.
+  parties?:     string[]
+  contested?:   boolean
+  positions?:   DeadlinePosition[]
 }
 
 // Treat blank/whitespace-only strings as "no link" — extraction payloads carry
@@ -381,7 +387,7 @@ export async function getDocketDeadlines(docketId: string, today: string): Promi
   const todayMs = new Date(today + "T00:00:00Z").getTime()
 
   const rows = await db
-    .select({ sourceUrl: filings.sourceUrl, filingExternalId: filings.externalId, payload: extractions.payload })
+    .select({ sourceUrl: filings.sourceUrl, filingExternalId: filings.externalId, filer: filings.filer, payload: extractions.payload })
     .from(filings)
     .innerJoin(extractions, eq(extractions.filingId, filings.id))
     .where(eq(filings.docketId, docketId))
@@ -391,12 +397,13 @@ export async function getDocketDeadlines(docketId: string, today: string): Promi
   // in this docket's extractions — including undated entries, which on FERC
   // dockets carry the eLibrary docket link. Lets a dated deadline that lacks its
   // own URL still resolve to a verifiable docket source instead of being dropped.
-  const groups  = new Map<string, RecordDeadline & { _perRow: string | null }>()
+  const groups  = new Map<string, RecordDeadline & { _perRow: string | null; _parties: Set<string> }>()
   const descLen = new Map<string, number>()
   let docketSource: string | null = null
 
   for (const row of rows) {
     docketSource = docketSource ?? cleanUrl(row.sourceUrl) ?? fercAccessionUrl(row.filingExternalId)
+    const filer = row.filer?.trim() || null   // party that stated this deadline (Task 1)
     for (const dl of row.payload?.deadlines ?? []) {
       const dv = cleanUrl(dl.verify_url)
       if (dv && !isBrokenFercSearchUrl(dv)) docketSource = docketSource ?? dv
@@ -423,10 +430,12 @@ export async function getDocketDeadlines(docketId: string, today: string): Promi
           mentionCount: 1,
           daysRemaining,
           actor:        dl.actor?.trim() || null,
+          _parties:     new Set<string>(filer ? [filer] : []),
         })
         descLen.set(key, dl.description.length)
       } else {
         existing.mentionCount++
+        if (filer) existing._parties.add(filer)
         const prevLen = descLen.get(key) ?? 0
         if (dl.description.length > prevLen) {
           existing.description = dl.description
@@ -446,7 +455,7 @@ export async function getDocketDeadlines(docketId: string, today: string): Promi
   // Resolve each deadline's link: its own source, else the docket-level source.
   // Data-quality gate: never render an extracted deadline without a source link.
   const resolved = [...groups.values()]
-    .map(({ _perRow, ...d }) => ({ ...d, link: _perRow ?? docketSource }))
+    .map(({ _perRow, _parties, ...d }) => ({ ...d, link: _perRow ?? docketSource, parties: [..._parties] }))
     .filter(d => d.link !== null)
 
   // Second pass: fuzzy-merge near-identical descriptions sharing (date, type).
@@ -465,6 +474,7 @@ export async function getDocketDeadlines(docketId: string, today: string): Promi
     hit.mentionCount += d.mentionCount
     if (!d.estimated) hit.estimated = false
     if (!hit.actor && d.actor) hit.actor = d.actor
+    hit.parties = [...new Set([...(hit.parties ?? []), ...(d.parties ?? [])])]
     if (d.description.length > hit.description.length) {
       // Prefer the most complete wording, and the link that came with it.
       hit.description = d.description
@@ -476,7 +486,9 @@ export async function getDocketDeadlines(docketId: string, today: string): Promi
   // B4: collapse with/without-hearing conditional variants (cross-date) to one
   // row headlining the earlier date, with a note for the conditional later date.
   const flat = merged.map(({ _tokens, ...d }) => d)
-  return groupConditionalDeadlines(flat, () => docketId)
+  // B4 conditional grouping first, then Task 1 same-date contested-milestone collapse.
+  const conditional = groupConditionalDeadlines(flat, () => docketId)
+  return groupContestedMilestones(conditional)
     .sort((a, b) => a.daysRemaining - b.daysRemaining)
 }
 
