@@ -190,23 +190,35 @@ export function groupContestedMilestones<T extends ContestableDeadline>(items: T
       out.push(...group)
       continue
     }
-    // Greedy theme-cluster within the date: a member joins a cluster if it shares
-    // ≥1 significant (domain) token with it — the gate that keeps an unrelated
-    // same-date obligation separate. Party wording diverges, but domain terms recur.
-    const clusters: { members: T[]; tokens: Set<string> }[] = []
-    for (const it of group) {
-      const toks = new Set(significantTokens(it.description))
-      const hit = clusters.find((c) => {
-        for (const t of toks) if (c.tokens.has(t)) return true
-        return false
-      })
-      if (hit) {
-        hit.members.push(it)
-        for (const t of toks) hit.tokens.add(t)
-      } else {
-        clusters.push({ members: [it], tokens: new Set(toks) })
+    // Theme-cluster within the date via connected components (union-find): two items
+    // are linked if they share ≥1 significant (domain) token, TRANSITIVELY. This bridges
+    // e.g. "Batch Zero cutoff" ↔ "conclude the rulemaking" through a party ask that
+    // mentions both ("…urges the Project 58481 rulemaking… batch zero…"), collapsing the
+    // whole contested date to one row — while a token-disjoint unrelated obligation on the
+    // same date (e.g. a Quarterly Stability Assessment) stays its own component. Greedy
+    // first-match missed these bridges (order-dependent); components are order-invariant.
+    const n = group.length
+    const parent = Array.from({ length: n }, (_, i) => i)
+    const find = (x: number): number => {
+      while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x] }
+      return x
+    }
+    const tokSets = group.map((it) => new Set(significantTokens(it.description)))
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        let shared = false
+        for (const t of tokSets[i]) if (tokSets[j].has(t)) { shared = true; break }
+        if (shared) parent[find(i)] = find(j)
       }
     }
+    const byRoot = new Map<number, T[]>()
+    for (let i = 0; i < n; i++) {
+      const r = find(i)
+      const b = byRoot.get(r)
+      if (b) b.push(group[i])
+      else byRoot.set(r, [group[i]])
+    }
+    const clusters = [...byRoot.values()].map((members) => ({ members }))
 
     for (const { members } of clusters) {
       if (members.length < 2) {

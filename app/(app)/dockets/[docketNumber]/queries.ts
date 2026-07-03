@@ -357,6 +357,23 @@ const cleanUrl = (s: string | null | undefined): string | null => {
   return v ? v : null
 }
 
+// Co-filers arrive as one comma-joined filer string ("GOOGLE LLC, LANCIUM LLC"); a
+// joint filing must count as separate parties, but an intra-name comma ("Brazos
+// Electric Power Cooperative, Inc.") must NOT split. Split on commas, then re-attach
+// bare corporate-suffix fragments (Inc., LLC, LP, …) to the preceding name. Dedup is
+// left to the caller's Set. Prevents the "GOOGLE LLC, LANCIUM LLC, GOOGLE LLC…" repeat.
+const _CORP_SUFFIX = /^(inc|inc\.|l\.?l\.?c\.?|l\.?p\.?|lp|ltd|ltd\.|co|co\.|corp|corp\.|n\.?a\.?|plc)$/i
+function splitFilers(filer: string | null): string[] {
+  if (!filer) return []
+  const parts = filer.split(",").map(s => s.trim()).filter(Boolean)
+  const out: string[] = []
+  for (const p of parts) {
+    if (out.length > 0 && _CORP_SUFFIX.test(p)) out[out.length - 1] += ", " + p
+    else out.push(p)
+  }
+  return out
+}
+
 // Fuzzy near-duplicate detection for deadline descriptions. Filings phrase the
 // same deadline differently ("EIA Form EIA-861M OMB approval expiration" vs
 // "EIA Form OMB approval expiration"); exact-key dedup misses these. We compare
@@ -430,12 +447,12 @@ export async function getDocketDeadlines(docketId: string, today: string): Promi
           mentionCount: 1,
           daysRemaining,
           actor:        dl.actor?.trim() || null,
-          _parties:     new Set<string>(filer ? [filer] : []),
+          _parties:     new Set<string>(splitFilers(filer)),
         })
         descLen.set(key, dl.description.length)
       } else {
         existing.mentionCount++
-        if (filer) existing._parties.add(filer)
+        for (const p of splitFilers(filer)) existing._parties.add(p)
         const prevLen = descLen.get(key) ?? 0
         if (dl.description.length > prevLen) {
           existing.description = dl.description
