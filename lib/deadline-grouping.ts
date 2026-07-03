@@ -227,14 +227,53 @@ export function groupContestedMilestones<T extends ContestableDeadline>(items: T
       }
       const sorted = [...members].sort((a, b) => b.mentionCount - a.mentionCount)
       const rep = sorted[0]
-      const positions: DeadlinePosition[] = sorted.map((m) => ({
-        description:  m.description,
-        parties:      m.parties ?? [],
-        actor:        m.actor ?? null,
-        link:         m.link ?? null,
-        estimated:    m.estimated,
-        mentionCount: m.mentionCount,
-      }))
+
+      // One position per distinct party. A party (or joint-filer group) that filed the
+      // same ask several times with slightly different wording is ONE position, not three
+      // — merge positions whose party sets overlap, keeping the fullest phrasing and
+      // summing the filing count. So the count reflects DISTINCT parties contesting the
+      // date, not intra-party repetition. Positions with no attributable party stay separate.
+      const positions: DeadlinePosition[] = []
+      for (const m of sorted) {
+        const mp = m.parties ?? []
+        const hit = mp.length
+          ? positions.find((x) => x.parties.some((p) => mp.includes(p)))
+          : undefined
+        if (hit) {
+          hit.parties = [...new Set([...hit.parties, ...mp])]
+          hit.mentionCount += m.mentionCount
+          hit.estimated = hit.estimated && m.estimated
+          if (m.description.length > hit.description.length) {
+            hit.description = m.description
+            if (m.link) hit.link = m.link
+          }
+        } else {
+          positions.push({
+            description:  m.description,
+            parties:      [...mp],
+            actor:        m.actor ?? null,
+            link:         m.link ?? null,
+            estimated:    m.estimated,
+            mentionCount: m.mentionCount,
+          })
+        }
+      }
+      // "Contested" requires ≥2 DISTINCT parties. If every filing on this date is the
+      // same party restating one ask, it's a normal proposed deadline, not a contest —
+      // emit a single plain row (fullest phrasing, summed mentions) instead.
+      if (positions.length < 2) {
+        const only = positions[0]
+        out.push({
+          ...rep,
+          description:  only?.description ?? rep.description,
+          parties:      only?.parties ?? rep.parties ?? [],
+          mentionCount: only?.mentionCount ?? rep.mentionCount,
+          estimated:    only ? only.estimated : rep.estimated,
+          contested:    false,
+          conditional:  null,
+        })
+        continue
+      }
       out.push({
         ...rep,
         description:  milestoneLabel(members.map((m) => m.description)),

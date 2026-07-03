@@ -431,8 +431,11 @@ export async function getDocketDeadlines(docketId: string, today: string): Promi
       // FERC-aware: real verify_url (not the broken ?q= search) → filing
       // source_url → FERC accession filelist link (from the filing external_id).
       const perRow = bestSourceLink(dl.verify_url, row.sourceUrl, row.filingExternalId)
-      const daysRemaining = Math.ceil(
-        (new Date(dl.date + "T12:00:00Z").getTime() - todayMs) / DAYS_MS
+      // Whole calendar-day countdown: both anchored at UTC midnight so the diff is an
+      // exact day count — the deadline day itself reads 0 (due today), tomorrow reads 1.
+      // (The old ceil-from-noon over-counted by one and under-colored urgency.)
+      const daysRemaining = Math.round(
+        (new Date(dl.date + "T00:00:00Z").getTime() - todayMs) / DAYS_MS
       )
 
       const existing = groups.get(key)
