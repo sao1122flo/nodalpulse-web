@@ -443,6 +443,21 @@ export const digestLeads = pgTable(
 // except where explicitly noted (dockets above is a shared-write exception).
 // ---------------------------------------------------------------------------
 
+// leads — record-page gate captures (work email + name + job title → "unlock
+// full record"). This is the ACTUALLY-USED lead-magnet channel, written by
+// services /public/lead. Distinct from digest_leads above (the /digest email-
+// subscribe path). The admin Leads page reads THIS table.
+export const leads = pgTable("leads", {
+  id:         uuid("id").defaultRandom().primaryKey(),
+  email:      text("email").notNull(),
+  name:       text("name"),
+  title:      text("title"),
+  market:     text("market"),
+  recordDate: date("record_date"),
+  sourceUrl:  text("source_url"),
+  capturedAt: timestamp("captured_at", { withTimezone: true }).defaultNow().notNull(),
+})
+
 // filings — subset of columns used by docket detail queries.
 export const filings = pgTable("filings", {
   id:         uuid("id").defaultRandom().primaryKey(),

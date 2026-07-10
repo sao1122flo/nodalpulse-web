@@ -2,14 +2,18 @@
 
 export type LeadExportRow = {
   email: string
-  source: string
+  name: string
+  title: string
+  market: string
   capturedAt: string // ISO timestamp
 }
 
 function toCsv(rows: LeadExportRow[]): string {
   const escape = (val: string) => `"${val.replace(/"/g, '""')}"`
-  const header = ["email", "source", "captured_at"].join(",")
-  const body = rows.map(r => [r.email, r.source, r.capturedAt].map(escape).join(","))
+  const header = ["email", "name", "title", "market", "captured_at"].join(",")
+  const body = rows.map(r =>
+    [r.email, r.name, r.title, r.market, r.capturedAt].map(escape).join(","),
+  )
   return [header, ...body].join("\r\n")
 }
 
@@ -21,7 +25,7 @@ export function ExportLeadsButton({ rows }: { rows: LeadExportRow[] }) {
     const stamp = new Date().toISOString().slice(0, 10)
     const a = document.createElement("a")
     a.href = url
-    a.download = `digest-leads-${stamp}.csv`
+    a.download = `leads-${stamp}.csv`
     document.body.appendChild(a)
     a.click()
     a.remove()
