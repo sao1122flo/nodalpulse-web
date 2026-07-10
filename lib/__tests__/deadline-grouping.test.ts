@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest"
-import { groupConditionalDeadlines, type ConditionalDeadline } from "../deadline-grouping"
+import {
+  groupConditionalDeadlines,
+  groupContestedMilestones,
+  type ConditionalDeadline,
+  type ContestableDeadline,
+} from "../deadline-grouping"
 
 // Cases drawn verbatim from prod docket A2508008 (the B4 D2 sample).
 type Item = ConditionalDeadline & { docket: string }
@@ -142,5 +147,57 @@ describe("groupConditionalDeadlines", () => {
     expect(out.filter(d => /^opening/i.test(d.description))).toHaveLength(1)
     expect(out.filter(d => /^reply/i.test(d.description))).toHaveLength(1)
     expect(out.filter(d => /evidentiary hearing/i.test(d.description) && d.type === "hearing")).toHaveLength(1)
+  })
+})
+
+// Cases drawn verbatim from prod docket 58481 (2026-07-10) — the same-date PGRR145 /
+// Batch Zero milestone the dashboard was rendering as ~8 near-identical rows because
+// it only ran groupConditionalDeadlines, not this second pass (regression guard for
+// dashboard/queries.ts).
+function cm(date: string, description: string, extra: Partial<ContestableDeadline> = {}): ContestableDeadline {
+  return {
+    date,
+    type: "other",
+    description,
+    estimated: true,
+    mentionCount: 1,
+    daysRemaining: 1,
+    ...extra,
+  }
+}
+
+describe("groupContestedMilestones", () => {
+  it("collapses the live 58481 Batch Zero / PGRR145 same-date restatements to one row", () => {
+    const rows: ContestableDeadline[] = [
+      cm("2026-07-10", "Sierra Club recommends the Commission conclude this rulemaking by approximately July 10, 2026, to align with expected approval of PGRR 145 and associated NPRRs."),
+      cm("2026-07-10", "PGRR 145 expected approval date (referenced as key coordination milestone for this rulemaking)."),
+      cm("2026-07-10", "Expected approval of PGRR 145 (batch zero process); Sierra Club urges Project 58481 rulemaking to be concluded by this date to align with PGRR 145"),
+      cm("2026-07-10", "PGRR145 eligibility deadline for Batch Zero intermediate agreements"),
+      cm("2026-07-10", "PGRR145 proposed eligibility deadline for Batch Zero loads to execute intermediate agreements"),
+      cm("2026-07-10", "Batch Zero Intermediate Agreement (IA) deadline referenced as the target date by which escrow rules and refund timelines must be established."),
+      cm("2026-07-10", "Batch Zero Intermediate Agreement (IA) deadline referenced by filers as the date by which escrow rules and refund timelines must be established"),
+      cm("2026-07-10", "Large loads must achieve Initial Energization by this date to avoid being subject to the new batch study evaluation criteria under proposed PGRR145 Section 9.2.1.4(3)."),
+    ]
+    const out = groupContestedMilestones(rows)
+    expect(out).toHaveLength(1)
+    expect(out[0].date).toBe("2026-07-10")
+    expect(out[0].mentionCount).toBe(8) // every restatement summed, nothing dropped
+    expect(out[0].description).toMatch(/batch/i) // milestone headline, not a raw sentence
+  })
+
+  it("keeps a token-disjoint same-date obligation separate (theme-gated)", () => {
+    const out = groupContestedMilestones([
+      cm("2026-07-10", "PGRR145 eligibility deadline for Batch Zero intermediate agreements"),
+      cm("2026-07-10", "PGRR145 proposed eligibility deadline for Batch Zero loads to execute intermediate agreements"),
+      cm("2026-07-10", "Quarterly wholesale settlement invoice remittance due to ERCOT"),
+    ])
+    // The two Batch Zero rows collapse; the unrelated settlement stays its own row.
+    expect(out).toHaveLength(2)
+  })
+
+  it("leaves a lone deadline on a date untouched", () => {
+    const out = groupContestedMilestones([cm("2026-07-10", "Initial briefs due")])
+    expect(out).toHaveLength(1)
+    expect(out[0].description).toBe("Initial briefs due")
   })
 })

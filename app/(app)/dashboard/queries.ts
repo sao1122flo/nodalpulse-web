@@ -10,7 +10,7 @@ import {
 } from "@/db/schema"
 import { and, eq, inArray, notInArray, desc, gte, sql, isNotNull } from "drizzle-orm"
 import { bestSourceLink, isBrokenFercSearchUrl, fercAccessionUrl } from "@/lib/ferc-links"
-import { groupConditionalDeadlines } from "@/lib/deadline-grouping"
+import { groupConditionalDeadlines, groupContestedMilestones } from "@/lib/deadline-grouping"
 
 // ---------------------------------------------------------------------------
 // Types
@@ -402,7 +402,31 @@ export async function getDeadlines(
 
   // B4: collapse with/without-hearing conditional variants (cross-date) to one
   // row before the final sort. market_events / ordinary deadlines pass through.
-  const grouped = groupConditionalDeadlines(result, d => d.docketId)
+  const conditional = groupConditionalDeadlines(result, d => d.docketId)
+
+  // Contested-milestone collapse — same second pass the docket record page runs
+  // (queries.ts:511), previously missing here. This is why the dashboard showed
+  // ~8 near-identical 58481 "Batch Zero / PGRR145 IA" rows for one date while the
+  // record page collapsed them to one. groupContestedMilestones buckets purely by
+  // DATE, which is only safe WITHIN a single docket; across the multi-docket
+  // dashboard we must partition by docketId first, or two unrelated dockets with a
+  // same-date, token-overlapping obligation would fuse. market_events are
+  // authoritative single calendar rows → never contested; pass through untouched.
+  const contestableByDocket = new Map<string, DashboardDeadline[]>()
+  const passthrough: DashboardDeadline[] = []
+  for (const d of conditional) {
+    if (d.kind === "market_event") {
+      passthrough.push(d)
+      continue
+    }
+    const bucket = contestableByDocket.get(d.docketId)
+    if (bucket) bucket.push(d)
+    else contestableByDocket.set(d.docketId, [d])
+  }
+  const grouped: DashboardDeadline[] = [...passthrough]
+  for (const bucket of contestableByDocket.values()) {
+    grouped.push(...groupContestedMilestones(bucket))
+  }
 
   // Cap after global sort — keeps the strip bounded regardless of tracking breadth.
   return grouped.sort((a, b) => a.daysRemaining - b.daysRemaining).slice(0, limit)
