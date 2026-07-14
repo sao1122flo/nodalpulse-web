@@ -1,21 +1,27 @@
-// MCP tool server for the NodalPulse connector (WS-A).
+// MCP tool server for the NodalPulse connector (WS-A + WS-C).
 //
 // Route is a dynamic [transport] segment (mcp-handler requirement): a request to
-// /api/mcp resolves transport="mcp" (stateless Streamable HTTP — our path, no Redis);
-// /api/sse would resolve the SSE transport. The PUBLIC url stays /api/mcp, which is
-// what lib/auth.ts advertises as the RFC 8707 `resource`.
+// /api/mcp resolves transport="mcp" (stateless Streamable HTTP — our path, no Redis).
+// The PUBLIC url stays /api/mcp, which lib/auth.ts advertises as the RFC 8707 `resource`.
 //
 // Auth: withMcpAuth validates the bearer access token (401 on bad/missing) and hands
 // us a non-null OAuthAccessToken whose `userId` is the clean user id every tool scopes to.
 // Tools are registered per-request so they close over that userId.
 //
-// Trust discipline (see CONNECTOR-MCP-FASE2.md §3): every tool description states
-// exactly what it returns and every result carries source links. Read-only.
+// Trust discipline (CONNECTOR-MCP-FASE2.md §3): every tool description states exactly
+// what it returns and its real scope limits; every result carries source links. All
+// WS-C tools are READ-ONLY and unmetered — guarded only by a light per-user read rate
+// limiter (checkReadRate), NOT the AI action quota.
 import { auth } from "@/lib/auth"
 import { withMcpAuth } from "better-auth/plugins"
 import { createMcpHandler } from "mcp-handler"
 import { z } from "zod"
+import { eq } from "drizzle-orm"
+import { db } from "@/db/client"
+import { watchedEntities } from "@/db/schema"
 import { getEntitlements } from "@/lib/entitlements"
+import { fercAccessionUrl } from "@/lib/ferc-links"
+import { checkReadRate } from "@/lib/mcp-rate-limit"
 import {
   resolveDocket,
   getDocketMeta,
@@ -23,6 +29,13 @@ import {
   getDocketFilingsPage,
   isDocketTracked,
 } from "@/app/(app)/dockets/[docketNumber]/queries"
+import {
+  getDeadlines,
+  getTrackedDocketIds,
+  jurisdictionsForMarkets,
+  getDiscoveryHits,
+} from "@/app/(app)/dashboard/queries"
+import { getThemes, getDiscoveryThemeFeed } from "@/app/(app)/discovery/queries"
 
 const LATEST_FILINGS = 10
 
@@ -30,9 +43,28 @@ const text = (payload: unknown) => ({
   content: [{ type: "text" as const, text: JSON.stringify(payload) }],
 })
 
+// Read-tool guardrail. Returns a text() response to short-circuit with, or null if OK.
+function rateLimited(userId: string) {
+  const r = checkReadRate(userId)
+  if (r.ok) return null
+  return text({
+    rate_limited: true,
+    retry_after_seconds: r.retryAfterSec,
+    message: `Too many requests. Try again in ~${r.retryAfterSec}s. (Read rate limit — not your AI quota.)`,
+  })
+}
+
+// Today in America/Chicago (the market timezone the app uses for deadline math).
+function todayChicago(): string {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "America/Chicago" }) // YYYY-MM-DD
+}
+
 function buildHandler(userId: string) {
   return createMcpHandler(
     (server) => {
+      // -----------------------------------------------------------------------
+      // check_docket (WS-A)
+      // -----------------------------------------------------------------------
       server.registerTool(
         "check_docket",
         {
@@ -46,12 +78,14 @@ function buildHandler(userId: string) {
           },
         },
         async ({ docket_id }: { docket_id: string }) => {
+          const limited = rateLimited(userId)
+          if (limited) return limited
+
           const header = await resolveDocket(docket_id.trim())
           if (!header) {
             return text({ found: false, message: `No docket "${docket_id}" in the NodalPulse Record.` })
           }
 
-          // Gate: only surface what this user is entitled to see.
           const ents = await getEntitlements(userId)
           const allowed =
             (await isDocketTracked(userId, header.id)) ||
@@ -104,8 +138,215 @@ function buildHandler(userId: string) {
         },
       )
 
-      // WS-C adds the other read tools here (list_watched_entities, list_deadlines,
-      // get_mentions, discover_by_theme); WS-D adds ask_the_record (metered).
+      // -----------------------------------------------------------------------
+      // list_watched_entities (WS-C) — trivial, user-scoped
+      // -----------------------------------------------------------------------
+      server.registerTool(
+        "list_watched_entities",
+        {
+          title: "List watched entities",
+          description:
+            "The user's own watched-entity list in NodalPulse (companies / parties they monitor). Use this to know what get_mentions is scanning for. Returns each entity name and its aliases.",
+          inputSchema: {},
+        },
+        async () => {
+          const limited = rateLimited(userId)
+          if (limited) return limited
+
+          const rows = await db
+            .select({ name: watchedEntities.name, aliases: watchedEntities.aliases })
+            .from(watchedEntities)
+            .where(eq(watchedEntities.userId, userId))
+
+          return text({
+            count: rows.length,
+            entities: rows.map((r) => ({ name: r.name, aliases: r.aliases ?? [] })),
+            note:
+              rows.length === 0
+                ? "No watched entities yet. Add some in NodalPulse to power get_mentions."
+                : undefined,
+          })
+        },
+      )
+
+      // -----------------------------------------------------------------------
+      // list_deadlines (WS-C) — extracted deadlines with source links
+      // -----------------------------------------------------------------------
+      server.registerTool(
+        "list_deadlines",
+        {
+          title: "List upcoming deadlines",
+          description:
+            "Upcoming regulatory deadlines extracted from the user's tracked dockets — hearings, comment/protest windows, compliance and effective dates. Scoped to dockets the user tracks (optionally narrowed to one docket or one market). Every deadline carries a source link; each is marked confirmed vs estimated (absent-date treated as estimated, never shown as confirmed). Only extraction-derived deadlines that have a verifiable source are returned.",
+          inputSchema: {
+            docket_id: z
+              .string()
+              .optional()
+              .describe('Optional: limit to a single docket you track, e.g. "56765".'),
+            market: z
+              .enum(["PUCT", "ERCOT", "CAISO", "PJM"])
+              .optional()
+              .describe("Optional: limit to one market (over your tracked dockets)."),
+          },
+        },
+        async ({ docket_id, market }: { docket_id?: string; market?: string }) => {
+          const limited = rateLimited(userId)
+          if (limited) return limited
+
+          const today = todayChicago()
+          let docketIds: string[]
+          let entitledJurisdictions: string[]
+
+          if (docket_id) {
+            const header = await resolveDocket(docket_id.trim())
+            if (!header) return text({ scope: docket_id, count: 0, deadlines: [], message: "Docket not in the Record." })
+            const ents = await getEntitlements(userId)
+            const allowed =
+              (await isDocketTracked(userId, header.id)) ||
+              ents.marketAccess.includes(header.jurisdiction ?? "")
+            if (!allowed) {
+              return text({ scope: docket_id, allowed: false, message: "Not in your tracked dockets / entitled markets." })
+            }
+            docketIds = [header.id]
+            entitledJurisdictions = [] // single explicit docket — no extra jurisdiction filter
+          } else {
+            docketIds = await getTrackedDocketIds(userId, false)
+            if (docketIds.length === 0) {
+              return text({ scope: "tracked", count: 0, deadlines: [], message: "You aren't tracking any dockets yet." })
+            }
+            entitledJurisdictions = market ? jurisdictionsForMarkets([market]) : []
+          }
+
+          const deadlines = await getDeadlines(docketIds, entitledJurisdictions, today)
+          return text({
+            scope: docket_id ?? market ?? "all-tracked",
+            as_of: today,
+            count: deadlines.length,
+            deadlines: deadlines.map((d) => ({
+              docket:         d.docketExternalId,
+              jurisdiction:   d.jurisdiction,
+              type:           d.type,
+              description:    d.description,
+              date:           d.date,
+              days_remaining: d.daysRemaining,
+              confirmed:      !d.estimated,        // estimated=true → not confirmed
+              estimated:      d.estimated,
+              mentions:       d.mentionCount,
+              conditional:    d.conditional ?? null,
+              kind:           d.kind,              // filing | market_event
+              source_url:     d.verifyUrl,
+            })),
+          })
+        },
+      )
+
+      // -----------------------------------------------------------------------
+      // get_mentions (WS-C) — FERC discovery firehose, watched-entity ILIKE match
+      // -----------------------------------------------------------------------
+      server.registerTool(
+        "get_mentions",
+        {
+          title: "Get recent mentions of your watched entities",
+          description:
+            "Recent mentions of the user's watched entities in the FERC discovery firehose only — an ILIKE (substring) match on filing descriptions and filer names, within a ~30-day TTL window. This is NOT all mentions across every market or every tracked docket; it is the FERC discovery feed. Every hit carries a FERC source link. Use list_watched_entities to see what's being matched.",
+          inputSchema: {
+            since_days: z
+              .number()
+              .int()
+              .min(1)
+              .max(60)
+              .optional()
+              .describe("Lookback window in days (default 30, max 60; bounded by the ~30-day feed TTL)."),
+          },
+        },
+        async ({ since_days }: { since_days?: number }) => {
+          const limited = rateLimited(userId)
+          if (limited) return limited
+
+          const { hits, hasEntities } = await getDiscoveryHits(userId, since_days ?? 30)
+          if (!hasEntities) {
+            return text({ count: 0, hits: [], message: "No watched entities yet — add some to get mentions." })
+          }
+          return text({
+            window_days: since_days ?? 30,
+            scope: "FERC discovery firehose (ILIKE on your watched entities)",
+            count: hits.length,
+            hits: hits.map((h) => ({
+              filed_at:       h.filedAt,
+              doc_type:       h.docType,
+              description:    h.description,
+              filers:         h.filerNames,
+              docket_numbers: h.docketNumbers,
+              source_url:     fercAccessionUrl(h.accession),
+            })),
+          })
+        },
+      )
+
+      // -----------------------------------------------------------------------
+      // discover_by_theme (WS-C) — FERC-only, untracked matters, precomputed themes
+      // -----------------------------------------------------------------------
+      server.registerTool(
+        "discover_by_theme",
+        {
+          title: "Discover FERC matters by theme",
+          description:
+            "Discover regulatory matters matching a curated theme (FERC-only in v1) that the user does NOT already track — a discovery surface, not monitoring. Backed by precomputed theme classification over the FERC discovery feed. Every result carries a FERC source link. Call with no theme to list the available theme keys and labels first.",
+          inputSchema: {
+            theme: z
+              .string()
+              .optional()
+              .describe("A theme key (from the no-argument listing). Omit to list available themes."),
+            since_days: z
+              .number()
+              .int()
+              .min(1)
+              .max(90)
+              .optional()
+              .describe("Lookback window in days (default 30)."),
+          },
+        },
+        async ({ theme, since_days }: { theme?: string; since_days?: number }) => {
+          const limited = rateLimited(userId)
+          if (limited) return limited
+
+          const themes = await getThemes()
+          if (!theme) {
+            return text({
+              available_themes: themes.map((t) => ({ key: t.key, label: t.label, definition: t.definition })),
+              message: "Call discover_by_theme again with one of these `key` values.",
+            })
+          }
+          const match = themes.find((t) => t.key === theme || t.label.toLowerCase() === theme.toLowerCase())
+          if (!match) {
+            return text({
+              found: false,
+              requested: theme,
+              available_themes: themes.map((t) => ({ key: t.key, label: t.label })),
+              message: "Unknown theme. Use one of the listed `key` values.",
+            })
+          }
+
+          const items = await getDiscoveryThemeFeed(userId, [match.key], since_days ?? 30)
+          return text({
+            theme: { key: match.key, label: match.label },
+            scope: "FERC-only, matters you do NOT already track",
+            window_days: since_days ?? 30,
+            count: items.length,
+            matters: items.map((i) => ({
+              filed_at:       i.filedAt,
+              days_ago:       i.daysAgo,
+              doc_type:       i.docType,
+              description:    i.description,
+              docket_numbers: i.docketNumbers,
+              themes:         i.themes.map((t) => t.label),
+              source_url:     i.sourceUrl,
+            })),
+          })
+        },
+      )
+
+      // WS-D adds ask_the_record (metered against the monthly AI quota) here.
     },
     {},
     { basePath: "/api", maxDuration: 60, verboseLogs: false },
