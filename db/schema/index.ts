@@ -220,6 +220,69 @@ export const accounts = pgTable("accounts", {
 })
 
 // ---------------------------------------------------------------------------
+// OAuth provider tables (better-auth mcp() / oidc-provider) — WS-A connector.
+// JS property names MUST match better-auth's model field names (camelCase);
+// DB columns are snake_cased per repo style. FK nuance: access-token / consent
+// client_id reference oauth_applications.client_id (the UNIQUE text col), NOT id.
+// See CONNECTOR-MCP-WS-A.md §3.
+// ---------------------------------------------------------------------------
+export const oauthApplications = pgTable(
+  "oauth_applications",
+  {
+    id:           text("id").primaryKey(),
+    name:         text("name"),
+    icon:         text("icon"),
+    metadata:     text("metadata"),
+    clientId:     text("client_id").notNull().unique(),
+    clientSecret: text("client_secret"),
+    redirectUrls: text("redirect_urls"),
+    type:         text("type"),
+    disabled:     boolean("disabled").default(false),
+    userId:       uuid("user_id").references(() => users.id, { onDelete: "cascade" }),
+    createdAt:    timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt:    timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index("oauth_applications_user_id_idx").on(t.userId)],
+)
+
+export const oauthAccessTokens = pgTable(
+  "oauth_access_tokens",
+  {
+    id:                    text("id").primaryKey(),
+    accessToken:           text("access_token").notNull().unique(),
+    refreshToken:          text("refresh_token").unique(),
+    accessTokenExpiresAt:  timestamp("access_token_expires_at", { withTimezone: true }),
+    refreshTokenExpiresAt: timestamp("refresh_token_expires_at", { withTimezone: true }),
+    clientId:              text("client_id").references(() => oauthApplications.clientId, { onDelete: "cascade" }),
+    userId:                uuid("user_id").references(() => users.id, { onDelete: "cascade" }),
+    scopes:                text("scopes"),
+    createdAt:             timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt:             timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    index("oauth_access_tokens_client_id_idx").on(t.clientId),
+    index("oauth_access_tokens_user_id_idx").on(t.userId),
+  ],
+)
+
+export const oauthConsents = pgTable(
+  "oauth_consents",
+  {
+    id:           text("id").primaryKey(),
+    clientId:     text("client_id").references(() => oauthApplications.clientId, { onDelete: "cascade" }),
+    userId:       uuid("user_id").references(() => users.id, { onDelete: "cascade" }),
+    scopes:       text("scopes"),
+    consentGiven: boolean("consent_given"),
+    createdAt:    timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt:    timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    index("oauth_consents_client_id_idx").on(t.clientId),
+    index("oauth_consents_user_id_idx").on(t.userId),
+  ],
+)
+
+// ---------------------------------------------------------------------------
 // admin_actions (audit log for /__admin surface)
 // ---------------------------------------------------------------------------
 export const adminActions = pgTable("admin_actions", {

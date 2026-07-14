@@ -1,10 +1,14 @@
 import { betterAuth } from "better-auth"
 import { drizzleAdapter } from "better-auth/adapters/drizzle"
-import { magicLink } from "better-auth/plugins"
+import { magicLink, mcp } from "better-auth/plugins"
 import { randomUUID } from "node:crypto"
 import { db } from "@/db/client"
-import { users, sessions, verifications, accounts } from "@/db/schema"
+import {
+  users, sessions, verifications, accounts,
+  oauthApplications, oauthAccessTokens, oauthConsents,
+} from "@/db/schema"
 import { sendMagicLink } from "./email"
+import { renderConsentHTML } from "./oauth-consent"
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const toUUID = (id: string | null | undefined) => (id && UUID_RE.test(id) ? id : randomUUID())
@@ -35,7 +39,13 @@ export const auth = betterAuth({
   advanced: { generateId: () => randomUUID() } as any,
   database: drizzleAdapter(db, {
     provider: "pg",
-    schema: { user: users, session: sessions, verification: verifications, account: accounts },
+    schema: {
+      user: users, session: sessions, verification: verifications, account: accounts,
+      // better-auth MODEL names → our pgTables (must be present or the adapter can't resolve them).
+      oauthApplication: oauthApplications,
+      oauthAccessToken: oauthAccessTokens,
+      oauthConsent:     oauthConsents,
+    },
   }),
   secret: process.env.BETTER_AUTH_SECRET!,
   baseURL: process.env.BETTER_AUTH_URL!,
@@ -68,6 +78,22 @@ export const auth = betterAuth({
           `?token=${encodeURIComponent(token)}` +
           `&callbackURL=${encodeURIComponent(callbackURL)}`
         await sendMagicLink({ to: email, url: confirmUrl })
+      },
+    }),
+    // WS-A connector: OAuth-for-MCP provider. Wraps oidc-provider internally, so we
+    // do NOT import the deprecated standalone oidcProvider() symbol. The served MCP
+    // tool endpoint is /api/mcp (see app/api/[transport]/route.ts). Consent uses the
+    // getConsentHTML fast-path (branded, self-contained) — no separate consent page.
+    mcp({
+      loginPage: "/login", // reuse existing magic-link + Google/MS login; BA resumes the authorize flow post-login
+      resource: `${process.env.BETTER_AUTH_URL}/api/mcp`, // RFC 8707 protected-resource = the tool endpoint
+      oidcConfig: {
+        loginPage: "/login",
+        requirePKCE: true,                    // Claude/ChatGPT use PKCE (OAuth 2.1)
+        allowDynamicClientRegistration: true, // REQUIRED: MCP clients self-register via DCR
+        scopes: ["openid", "profile", "email", "offline_access"],
+        storeClientSecret: "hashed",          // hardening; default is "plain"
+        getConsentHTML: renderConsentHTML,     // branded "Claude will read your NodalPulse Record"
       },
     }),
   ],

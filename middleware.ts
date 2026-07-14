@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from "next/server"
 
-const PUBLIC = ["/login", "/api/auth", "/api/health", "/api/stripe-webhook", "/_next", "/favicon.ico"]
+const PUBLIC = [
+  "/login", "/api/auth", "/api/health", "/api/stripe-webhook", "/_next", "/favicon.ico",
+  // WS-A connector: root OAuth discovery is probed with NO cookie, and the MCP
+  // transport endpoints do their own bearer auth via withMcpAuth. Gating these
+  // would 307 them to /login (same failure mode as the 2026-06-29 manifest 307).
+  // NOTE: /oauth/consent is deliberately NOT here — it must require a live session.
+  "/.well-known", // /.well-known/oauth-authorization-server + oauth-protected-resource
+  "/api/mcp",     // Streamable HTTP transport (the connector URL)
+  "/api/sse",     // SSE transport (same handler, different [transport] value)
+]
 
 // Static assets (by extension) must never bounce to /login. Browsers fetch the
 // manifest + icons WITHOUT credentials, so they always look unauthenticated —
