@@ -198,6 +198,27 @@ export function askQuestion(params: {
   return post("/qna", params, 60_000)
 }
 
+// ── Connector: ask_the_record (docket-scoped, WS-D) ────────────────────────────
+
+export interface ConnectorAskResult {
+  answer: string
+  citations: QnaCitation[]
+  conversation_id?: string
+  cost_estimate?: number
+  used_today: number
+  limit_per_day: number
+  no_context?: boolean
+}
+
+export function askTheRecord(params: {
+  user_id: string
+  docket_id: string // docket UUID (web resolves + tracked-gates before calling)
+  question: string
+  limit_per_day: number
+}): Promise<Result<ConnectorAskResult, ServicesError>> {
+  return post("/connector/ask", params, 60_000)
+}
+
 export interface QnaUsageResult {
   user_id: string
   used_today: number

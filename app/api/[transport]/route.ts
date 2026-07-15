@@ -22,6 +22,7 @@ import { watchedEntities } from "@/db/schema"
 import { getEntitlements } from "@/lib/entitlements"
 import { fercAccessionUrl } from "@/lib/ferc-links"
 import { checkReadRate } from "@/lib/mcp-rate-limit"
+import { askTheRecord } from "@/lib/services-client"
 import {
   resolveDocket,
   getDocketMeta,
@@ -346,7 +347,84 @@ function buildHandler(userId: string) {
         },
       )
 
-      // WS-D adds ask_the_record (metered against the monthly AI quota) here.
+      // -----------------------------------------------------------------------
+      // ask_the_record (WS-D) — the killer tool. Metered AI action (NOT rate-limited
+      // by the read limiter). Grounded on ONE docket the user tracks; always cited.
+      // -----------------------------------------------------------------------
+      server.registerTool(
+        "ask_the_record",
+        {
+          title: "Ask the Record",
+          description:
+            "Ask a natural-language question about a specific docket the user TRACKS, answered ONLY from their verified NodalPulse Record, with citations (source links). v1 scope: grounded over structured extraction summaries of the docket's recent filings (last ~30 days, up to 15 filings) — NOT full document text. If the answer isn't in those filings it says so rather than guessing. This is a metered AI action: it counts against the user's daily AI quota (shared with in-app Q&A).",
+          inputSchema: {
+            docket_id: z.string().describe('A docket the user tracks, e.g. "58481".'),
+            question: z.string().describe("The question to answer from this docket's Record."),
+          },
+        },
+        async ({ docket_id, question }: { docket_id: string; question: string }) => {
+          // No read-limiter here — this is a metered AI action (services enforces the quota).
+          const header = await resolveDocket(docket_id.trim())
+          if (!header) {
+            return text({ found: false, message: `No docket "${docket_id}" in the NodalPulse Record.` })
+          }
+          // ask_the_record requires TRACKING (stricter than the read tools' tracked-OR-entitled).
+          if (!(await isDocketTracked(userId, header.id))) {
+            return text({
+              allowed: false,
+              docket: { number: header.externalId },
+              message: "Ask the Record only answers over dockets you track. Track this docket in NodalPulse first.",
+            })
+          }
+          const ents = await getEntitlements(userId)
+          const limitPerDay = ents.qa.limitPerDay ?? 0
+          if (limitPerDay === 0) {
+            return text({
+              available: false,
+              message: "Ask the Record isn't available on your current plan. Upgrade at nodalpulse.com/pricing.",
+            })
+          }
+
+          const res = await askTheRecord({
+            user_id: userId,
+            docket_id: header.id,
+            question,
+            limit_per_day: limitPerDay,
+          })
+
+          if (!res.ok) {
+            const e = res.error
+            if (e.kind === "unexpected" && e.status === 429) {
+              let resetsAt: string | undefined
+              try { resetsAt = JSON.parse(e.body ?? "{}").resets_at } catch { /* ignore */ }
+              return text({
+                rate_limited: true,
+                limit_per_day: limitPerDay,
+                message: `You've reached your daily AI limit (${limitPerDay}).${resetsAt ? ` Resets ${resetsAt}.` : ""} Upgrade for more at nodalpulse.com/pricing.`,
+              })
+            }
+            return text({ error: true, message: "Ask the Record is temporarily unavailable. Please try again." })
+          }
+
+          const v = res.value
+          return text({
+            docket: { number: header.externalId, jurisdiction: header.jurisdiction },
+            question,
+            answer: v.answer,
+            citations: v.citations.map((c) => ({
+              title:      c.title,
+              docket:     c.docket_number,
+              source_url: c.source_url,
+              note:       c.relevance_note,
+              snippet:    c.snippet,
+            })),
+            ai_actions_used_today:    v.used_today,
+            ai_actions_limit_per_day: v.limit_per_day,
+            scope_note:
+              "Grounded on structured extraction summaries of this docket's recent filings (last ~30 days, up to 15) — not full document text.",
+          })
+        },
+      )
     },
     {},
     { basePath: "/api", maxDuration: 60, verboseLogs: false },
