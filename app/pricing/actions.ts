@@ -11,23 +11,27 @@ import { type Tier } from "@/lib/tiers"
 
 const appUrl = () => process.env.NEXT_PUBLIC_APP_URL ?? "https://app.nodalpulse.com"
 
-const PRICE_ENV: Record<Tier, string> = {
-  starter: "STRIPE_PRICE_STARTER",
-  pro:     "STRIPE_PRICE_PRO",
-  team:    "STRIPE_PRICE_TEAM",
-  org:     "STRIPE_PRICE_ORG",
+// Free needs no Stripe (it's the no-subscription default); Org is quote-only.
+const PRICE_ENV: Partial<Record<Tier, string>> = {
+  pro:  "STRIPE_PRICE_PRO",
+  team: "STRIPE_PRICE_TEAM",
+  org:  "STRIPE_PRICE_ORG",
 }
 
 export async function createTieredCheckoutSession(tier: Tier, returnPath?: string) {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session) throw new Error("Unauthenticated")
 
+  if (tier === "free") {
+    throw new Error("Free needs no checkout — just sign up.")
+  }
   if (tier === "org") {
     throw new Error("Org tier requires direct sales contact — use mailto:hello@nodalpulse.com")
   }
 
-  const priceId = process.env[PRICE_ENV[tier]]
-  if (!priceId) throw new Error(`${PRICE_ENV[tier]} is not configured`)
+  const envKey = PRICE_ENV[tier]
+  const priceId = envKey ? process.env[envKey] : undefined
+  if (!priceId) throw new Error(`Stripe price for ${tier} is not configured`)
 
   // Whitelist: must be a relative path. Reject anything containing '//' to block
   // open-redirect via protocol-relative URLs (e.g. //evil.com).

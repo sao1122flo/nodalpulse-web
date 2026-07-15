@@ -48,9 +48,9 @@ export default async function DashboardPage({
     getEntitlements(session.user.id),
     getQnaUsage(session.user.id),
   ])
-  const { marketAccess, teamSeats, qa } = ents
+  const { marketAccess, teamSeats, aiActions } = ents
   const hasTeam = teamSeats.limit > 1
-  const qnaLimitPerDay = qa.limitPerDay ?? 0
+  const qnaLimitPerDay = aiActions.perMonth ?? 1_000_000
   const qnaUsedToday = qnaUsageResult.ok ? qnaUsageResult.value.used_today : 0
 
   // Compute which UI chips this user is entitled to see

@@ -22,39 +22,28 @@ vi.mock("drizzle-orm", () => ({
   inArray: vi.fn((col: unknown, vals: unknown) => ({ op: "inArray", col, vals })),
 }))
 
-import { resolveTier, resolveAddonMarket, TIER_ENTITLEMENTS, type Tier } from "@/lib/tiers"
+import { resolveTier, TIER_ENTITLEMENTS, type Tier } from "@/lib/tiers"
 import { applyTierEntitlements } from "@/lib/entitlements"
 
 // ---------------------------------------------------------------------------
-// resolveTier
+// resolveTier — Free needs no Stripe; paid tiers map from env price IDs.
 // ---------------------------------------------------------------------------
 describe("resolveTier", () => {
-  const PRICE_IDS = {
-    starter: "price_starter_test",
-    pro:     "price_pro_test",
-    team:    "price_team_test",
-    org:     "price_org_test",
-  }
-
   beforeEach(() => {
-    process.env.STRIPE_PRICE_STARTER = PRICE_IDS.starter
-    process.env.STRIPE_PRICE_PRO     = PRICE_IDS.pro
-    process.env.STRIPE_PRICE_TEAM    = PRICE_IDS.team
-    process.env.STRIPE_PRICE_ORG     = PRICE_IDS.org
+    process.env.STRIPE_PRICE_PRO  = "price_pro_test"
+    process.env.STRIPE_PRICE_TEAM = "price_team_test"
+    process.env.STRIPE_PRICE_ORG  = "price_org_test"
   })
-
   afterEach(() => {
-    delete process.env.STRIPE_PRICE_STARTER
     delete process.env.STRIPE_PRICE_PRO
     delete process.env.STRIPE_PRICE_TEAM
     delete process.env.STRIPE_PRICE_ORG
   })
 
   it.each([
-    ["price_starter_test", "starter"],
-    ["price_pro_test",     "pro"],
-    ["price_team_test",    "team"],
-    ["price_org_test",     "org"],
+    ["price_pro_test",  "pro"],
+    ["price_team_test", "team"],
+    ["price_org_test",  "org"],
   ] as [string, Tier][])("resolves %s to '%s'", (priceId, expected) => {
     expect(resolveTier(priceId)).toBe(expected)
   })
@@ -69,103 +58,67 @@ describe("resolveTier", () => {
 })
 
 // ---------------------------------------------------------------------------
-// resolveAddonMarket
-// ---------------------------------------------------------------------------
-describe("resolveAddonMarket", () => {
-  beforeEach(() => {
-    process.env.STRIPE_PRICE_ADDON_CAISO = "price_addon_caiso_test"
-  })
-
-  afterEach(() => {
-    delete process.env.STRIPE_PRICE_ADDON_CAISO
-  })
-
-  it("resolves CAISO add-on price to 'CAISO'", () => {
-    expect(resolveAddonMarket("price_addon_caiso_test")).toBe("CAISO")
-  })
-
-  it("returns null for an unknown add-on price", () => {
-    expect(resolveAddonMarket("price_unknown")).toBeNull()
-  })
-
-  it("returns null for empty string", () => {
-    expect(resolveAddonMarket("")).toBeNull()
-  })
-})
-
-// ---------------------------------------------------------------------------
-// TIER_ENTITLEMENTS shape validation
+// TIER_ENTITLEMENTS shape — usage-gated model (markets never gate).
 // ---------------------------------------------------------------------------
 describe("TIER_ENTITLEMENTS", () => {
-  const ALL_TIERS: Tier[] = ["starter", "pro", "team", "org"]
+  const ALL_TIERS: Tier[] = ["free", "pro", "team", "org"]
 
-  it("has entries for every tier", () => {
+  it("has entries for every tier including free", () => {
     for (const tier of ALL_TIERS) {
       expect(TIER_ENTITLEMENTS[tier]).toBeDefined()
       expect(TIER_ENTITLEMENTS[tier].length).toBeGreaterThan(0)
     }
   })
 
-  it("every tier includes daily_brief", () => {
+  it("every tier carries an ai_actions monthly quota", () => {
     for (const tier of ALL_TIERS) {
-      const features = TIER_ENTITLEMENTS[tier].map(e => e.feature)
-      expect(features).toContain("daily_brief")
+      const row = TIER_ENTITLEMENTS[tier].find(e => e.feature === "ai_actions")
+      expect(row, `${tier} missing ai_actions`).toBeDefined()
+      expect(row?.value).toHaveProperty("per_month")
     }
   })
 
-  it("starter has correct tracked_dockets limit", () => {
-    const row = TIER_ENTITLEMENTS.starter.find(e => e.feature === "tracked_dockets")
-    expect(row?.value).toEqual({ limit: 5 })
+  it("free is a real tier: 2 dockets, 3 AI actions/mo", () => {
+    const dockets = TIER_ENTITLEMENTS.free.find(e => e.feature === "tracked_dockets")
+    const ai      = TIER_ENTITLEMENTS.free.find(e => e.feature === "ai_actions")
+    expect(dockets?.value).toEqual({ limit: 2 })
+    expect(ai?.value).toEqual({ per_month: 3 })
   })
 
-  it("pro has correct qa limit_per_day", () => {
-    const row = TIER_ENTITLEMENTS.pro.find(e => e.feature === "qa")
-    expect(row?.value).toEqual({ limit_per_day: 30 })
+  it("pro has 15 dockets and 200 AI actions/mo", () => {
+    const dockets = TIER_ENTITLEMENTS.pro.find(e => e.feature === "tracked_dockets")
+    const ai      = TIER_ENTITLEMENTS.pro.find(e => e.feature === "ai_actions")
+    expect(dockets?.value).toEqual({ limit: 15 })
+    expect(ai?.value).toEqual({ per_month: 200 })
   })
 
-  it("team has sla with correct uptime", () => {
-    const row = TIER_ENTITLEMENTS.team.find(e => e.feature === "sla")
-    expect(row?.value).toEqual({ uptime: 0.995 })
-  })
-
-  it("org has unlimited dockets (null limit)", () => {
-    const row = TIER_ENTITLEMENTS.org.find(e => e.feature === "tracked_dockets")
-    expect(row?.value).toEqual({ limit: null })
-  })
-
-  it("org includes audit_export and api_access", () => {
+  it("org has unlimited dockets + AI (null) and audit_export + api_access", () => {
+    const dockets = TIER_ENTITLEMENTS.org.find(e => e.feature === "tracked_dockets")
+    const ai      = TIER_ENTITLEMENTS.org.find(e => e.feature === "ai_actions")
+    expect(dockets?.value).toEqual({ limit: null })
+    expect(ai?.value).toEqual({ per_month: null })
     const features = TIER_ENTITLEMENTS.org.map(e => e.feature)
     expect(features).toContain("audit_export")
     expect(features).toContain("api_access")
   })
 
-  it("starter and pro have team_seats limit 1", () => {
-    for (const tier of ["starter", "pro"] as Tier[]) {
-      const row = TIER_ENTITLEMENTS[tier].find(e => e.feature === "team_seats")
-      expect(row?.value).toEqual({ limit: 1 })
+  it("NO tier carries market_access rows — markets never gate", () => {
+    for (const tier of ALL_TIERS) {
+      const marketRows = TIER_ENTITLEMENTS[tier].filter(e => e.feature.startsWith("market_access:"))
+      expect(marketRows, `${tier} should not gate markets`).toHaveLength(0)
     }
   })
 
-  it("every tier includes qa entitlement", () => {
+  it("every tier carries a watched_entities cap", () => {
     for (const tier of ALL_TIERS) {
       const features = TIER_ENTITLEMENTS[tier].map(e => e.feature)
-      expect(features).toContain("qa")
+      expect(features).toContain("watched_entities")
     }
-  })
-
-  it("org always includes all market_access rows regardless of BETA_MARKETS_FREE", () => {
-    const features = TIER_ENTITLEMENTS.org.map(e => e.feature)
-    expect(features).toContain("market_access:PUCT")
-    expect(features).toContain("market_access:ERCOT")
-    expect(features).toContain("market_access:CAISO")
-    expect(features).toContain("market_access:PJM")
   })
 })
 
 // ---------------------------------------------------------------------------
 // applyTierEntitlements — verifies DB calls per tier
-// The function now deletes only source IN ('tier','addon') rows (not all rows)
-// and inserts rows with source='tier' stamped.
 // ---------------------------------------------------------------------------
 describe("applyTierEntitlements", () => {
   function makeDeleteChain() {
@@ -175,20 +128,18 @@ describe("applyTierEntitlements", () => {
   }
   function makeInsertChain() {
     const chain: Record<string, unknown> = {}
-    chain.values = vi.fn(() => Promise.resolve())
+    chain.onConflictDoNothing = vi.fn(() => Promise.resolve())
+    chain.values = vi.fn(() => chain)
     return chain
   }
 
   beforeEach(() => {
-    process.env.STRIPE_PRICE_STARTER = "price_starter_test"
-    process.env.STRIPE_PRICE_PRO     = "price_pro_test"
-    process.env.STRIPE_PRICE_TEAM    = "price_team_test"
-    process.env.STRIPE_PRICE_ORG     = "price_org_test"
+    process.env.STRIPE_PRICE_PRO  = "price_pro_test"
+    process.env.STRIPE_PRICE_TEAM = "price_team_test"
+    process.env.STRIPE_PRICE_ORG  = "price_org_test"
     vi.clearAllMocks()
   })
-
   afterEach(() => {
-    delete process.env.STRIPE_PRICE_STARTER
     delete process.env.STRIPE_PRICE_PRO
     delete process.env.STRIPE_PRICE_TEAM
     delete process.env.STRIPE_PRICE_ORG
@@ -202,25 +153,17 @@ describe("applyTierEntitlements", () => {
 
     await applyTierEntitlements("user-123", "price_pro_test", null)
 
-    // Delete is called once (on entitlements table)
     expect(mockDelete).toHaveBeenCalledOnce()
     expect(deleteChain.where).toHaveBeenCalledOnce()
-
-    // Insert is called once
     expect(mockInsert).toHaveBeenCalledOnce()
-    const insertedRows = (insertChain.values as ReturnType<typeof vi.fn>).mock.calls[0][0]
 
-    // Every inserted row carries source='tier'
+    const insertedRows = (insertChain.values as ReturnType<typeof vi.fn>).mock.calls[0][0]
     for (const row of insertedRows) {
       expect(row.source).toBe("tier")
       expect(row.userId).toBe("user-123")
       expect(row.expiresAt).toBeNull()
     }
-
     const features = insertedRows.map((r: { feature: string }) => r.feature)
-    expect(features).toContain("daily_brief")
-    expect(features).toContain("tracked_dockets")
-    // Features must match TIER_ENTITLEMENTS[pro]
     expect(features).toEqual(TIER_ENTITLEMENTS.pro.map(e => e.feature))
   })
 
@@ -233,27 +176,11 @@ describe("applyTierEntitlements", () => {
     expect(mockInsert).not.toHaveBeenCalled()
   })
 
-  it("passes expiresAt to all inserted rows", async () => {
-    const deleteChain = makeDeleteChain()
-    const insertChain = makeInsertChain()
-    mockDelete.mockReturnValue(deleteChain)
-    mockInsert.mockReturnValue(insertChain)
-
-    const expiry = new Date("2026-06-01T00:00:00Z")
-    await applyTierEntitlements("user-abc", "price_pro_test", expiry)
-
-    const insertedRows = (insertChain.values as ReturnType<typeof vi.fn>).mock.calls[0][0]
-    for (const row of insertedRows) {
-      expect(row.expiresAt).toBe(expiry)
-    }
-  })
-
-  it("inserts the correct feature set for each tier", async () => {
+  it("inserts the correct feature set for each paid tier", async () => {
     for (const [priceEnvKey, tier] of [
-      ["price_starter_test", "starter"],
-      ["price_pro_test",     "pro"],
-      ["price_team_test",    "team"],
-      ["price_org_test",     "org"],
+      ["price_pro_test",  "pro"],
+      ["price_team_test", "team"],
+      ["price_org_test",  "org"],
     ] as [string, Tier][]) {
       const deleteChain = makeDeleteChain()
       const insertChain = makeInsertChain()

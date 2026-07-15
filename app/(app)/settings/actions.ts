@@ -329,59 +329,13 @@ export type AddMarketAddonResult =
   | { ok: true }
   | { ok: false; error: string }
 
-export async function addMarketAddon(market: string): Promise<AddMarketAddonResult> {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session) return { ok: false, error: "Not authenticated" }
-
-  // Only CAISO is live; PJM is dark until pre-GA.
-  const { addonPriceId } = await import("@/lib/tiers")
-  const priceId = addonPriceId(market)
-  if (!priceId) {
-    return { ok: false, error: `Market "${market}" add-on is not available yet.` }
+export async function addMarketAddon(_market: string): Promise<AddMarketAddonResult> {
+  // Market add-ons are retired under the usage-gated model — every market is included
+  // on every plan (see lib/tiers.ts). Kept as a no-op so any lingering caller compiles.
+  return {
+    ok: false,
+    error: "Market add-ons are no longer sold — every market is included on your plan.",
   }
-
-  const [sub] = await db
-    .select({
-      stripeSubscriptionId: subscriptions.stripeSubscriptionId,
-      stripeCustomerId:     subscriptions.stripeCustomerId,
-      status:               subscriptions.status,
-    })
-    .from(subscriptions)
-    .where(eq(subscriptions.userId, session.user.id))
-    .limit(1)
-
-  if (!sub?.stripeSubscriptionId) {
-    return { ok: false, error: "No active subscription found. Subscribe first at /pricing." }
-  }
-  if (sub.status !== "active" && sub.status !== "trialing") {
-    return { ok: false, error: "Your subscription is not active. Check billing at /settings?tab=billing." }
-  }
-
-  // Check if the user already has this market (avoids a duplicate Stripe item).
-  const ents = await getEntitlements(session.user.id)
-  if (ents.marketAccess.includes(market)) {
-    return { ok: false, error: `You already have access to ${market}.` }
-  }
-
-  // Add the add-on as a new subscription item. Stripe fires
-  // customer.subscription.updated which will call applySubscriptionEntitlements.
-  try {
-    await stripe.subscriptionItems.create({
-      subscription: sub.stripeSubscriptionId,
-      price: priceId,
-      quantity: 1,
-    })
-  } catch (e) {
-    console.error("[addMarketAddon] Stripe error:", e)
-    return { ok: false, error: "Failed to add market add-on. Please try again or contact support." }
-  }
-
-  return { ok: true }
-}
-
-// Void wrappers for use as HTML form actions (Next.js requires void return).
-export async function addCaisoAddon(): Promise<void> {
-  await addMarketAddon("CAISO")
 }
 
 // ---------------------------------------------------------------------------

@@ -8,8 +8,7 @@ import { subscriptions, teamMemberships } from "@/db/schema"
 import { and, eq, ne, count } from "drizzle-orm"
 import { getEntitlements } from "@/lib/entitlements"
 import { getQnaUsage } from "@/lib/services-client"
-import { createPortalSession, listTeamMembers, listApiKeys, requestBriefExport, addCaisoAddon, listEntities } from "./actions"
-import { addonPriceId } from "@/lib/tiers"
+import { createPortalSession, listTeamMembers, listApiKeys, requestBriefExport, listEntities } from "./actions"
 import { listSavedSearches } from "@/app/(app)/saved-searches/actions"
 import { SavedSearchesSettings } from "./SavedSearchesSettings"
 import { TeamInviteForm } from "./TeamInviteForm"
@@ -232,16 +231,16 @@ export default async function SettingsPage({
             </div>
             <div className="flex items-center justify-between py-2.5">
               <div>
-                <span className="text-[var(--np-text-body)] text-[13px]">Q&amp;A</span>
-                {ents.qa.limitPerDay !== null && ents.qa.limitPerDay > 0 && (
+                <span className="text-[var(--np-text-body)] text-[13px]">Ask the Record</span>
+                {ents.aiActions.perMonth !== null && ents.aiActions.perMonth > 0 && (
                   <p className="text-[var(--np-text-muted)] text-[11px] mt-0.5">
                     {qnaUsedToday !== null
-                      ? `${qnaUsedToday} of ${ents.qa.limitPerDay} questions used today · resets at midnight CT`
-                      : `${ents.qa.limitPerDay} questions/day · resets at midnight CT`}
+                      ? `${qnaUsedToday} of ${ents.aiActions.perMonth} AI actions used this month`
+                      : `${ents.aiActions.perMonth} AI actions/month`}
                   </p>
                 )}
               </div>
-              {ents.qa.limitPerDay === 0 ? (
+              {ents.aiActions.perMonth === 0 ? (
                 <a href="/pricing" className="text-[var(--np-accent-text)] text-[12px] hover:text-[var(--np-accent-hover)] transition-colors">View plans →</a>
               ) : (
                 <a href="/chat" className="text-[var(--np-accent-text)] text-[13px] hover:text-[var(--np-accent-hover)] transition-colors">Open Q&amp;A →</a>
@@ -375,27 +374,7 @@ export default async function SettingsPage({
                   </span>
                 ))}
               </div>
-              {/* CAISO add-on CTA — only shown when configured + user doesn't have it */}
-              {addonPriceId("CAISO") && !ents.marketAccess.includes("CAISO") && (
-                <div className="border-t border-[var(--np-border)] pt-4">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <p className="text-[var(--np-text-body)] text-[13px] font-medium">Add California (CAISO)</p>
-                      <p className="text-[var(--np-text-muted)] text-[12px] mt-0.5">
-                        CPUC proceedings + CAISO market filings · billed to your existing subscription
-                      </p>
-                    </div>
-                    <form action={addCaisoAddon}>
-                      <button
-                        type="submit"
-                        className="shrink-0 h-9 px-4 rounded-[var(--np-radius-md)] border border-[var(--np-accent)] text-[var(--np-accent-text)] text-[13px] hover:bg-[var(--np-accent)] hover:text-white transition-colors cursor-pointer"
-                      >
-                        Add CAISO
-                      </button>
-                    </form>
-                  </div>
-                </div>
-              )}
+              {/* Market add-ons removed: every market is included on every plan. */}
             </SettingsCard>
           )}
 

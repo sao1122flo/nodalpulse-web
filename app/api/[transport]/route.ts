@@ -377,7 +377,9 @@ function buildHandler(userId: string) {
             })
           }
           const ents = await getEntitlements(userId)
-          const limitPerDay = ents.qa.limitPerDay ?? 0
+          // Monthly AI-action quota (null = unlimited). Free includes AI (3/mo), so this
+          // is a defensive guard; the real conversion trigger is the 429 on exhaustion.
+          const limitPerDay = ents.aiActions.perMonth ?? 1_000_000
           if (limitPerDay === 0) {
             return text({
               available: false,

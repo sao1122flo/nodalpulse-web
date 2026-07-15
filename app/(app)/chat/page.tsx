@@ -26,13 +26,12 @@ export default async function ChatPage() {
       .limit(1),
   ])
 
-  const limitPerDay = ents.qa.limitPerDay ?? 0
+  // Monthly AI-action quota (null = unlimited). Free now includes AI (3/mo), so this
+  // "blocked" branch effectively never fires — kept only as a defensive fallback.
+  const limitPerDay = ents.aiActions.perMonth ?? 1_000_000
   const marketRoles: string[] = profileRows[0]?.marketRoles ?? []
 
-  // Blocked: free user or expired trial
   if (limitPerDay === 0) {
-    const tier = ents.tier
-    const upgradeTier = tier === null ? "starter" : tier === "starter" ? "pro" : "pro"
     return (
       <div className="px-8 py-8 max-w-2xl">
         <TrialBanner />
@@ -45,12 +44,9 @@ export default async function ChatPage() {
           </p>
           <p className="text-[var(--np-text-muted)] text-[13px] max-w-sm mx-auto leading-relaxed mb-6">
             Ask questions about your tracked filings and get cited answers.
-            {tier === "starter"
-              ? " Upgrade to Pro for 30 questions per day."
-              : " Start with Starter for 10 questions per day."}
           </p>
           <a
-            href={`/pricing?tier=${upgradeTier}&return=%2Fchat`}
+            href={`/pricing?tier=pro&return=%2Fchat`}
             className="
               inline-flex items-center justify-center
               h-10 px-5 rounded-[var(--np-radius-md)]

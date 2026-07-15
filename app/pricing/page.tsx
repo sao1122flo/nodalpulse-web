@@ -16,7 +16,7 @@ export const metadata: Metadata = {
     "NodalPulse pricing: Starter ($99/mo), Pro ($249/mo), Team ($749/mo), Org ($1,999/mo). 14-day free trial — no card required. One regulatory market of your choice included; add more in-app.",
 }
 
-const COLS = ["free", "starter", "pro", "team", "org"] as const
+const COLS = ["free", "pro", "team", "org"] as const
 
 export default async function PricingPage({
   searchParams,
@@ -341,6 +341,18 @@ function TierCTA({
       >
         Current plan
       </span>
+    )
+  }
+
+  // Free needs no checkout — it's the default for any account. Sign up / go to app.
+  if (tier === "free") {
+    return (
+      <a
+        href={isLoggedIn ? "/dashboard" : "/login"}
+        className={`${baseBtn} border border-[var(--np-border)] text-[var(--np-text-body)] hover:border-[var(--np-border-strong)]`}
+      >
+        {isLoggedIn ? "Go to app" : "Get started free"}
+      </a>
     )
   }
 

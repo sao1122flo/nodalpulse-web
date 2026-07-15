@@ -28,13 +28,15 @@ export async function sendQuestion(
   }
 
   const ents = await getEntitlements(session.user.id)
-  const limitPerDay = ents.qa.limitPerDay ?? 0
+  // Monthly AI-action quota (null = unlimited → effectively no cap). limit_per_day is
+  // the legacy wire field name; it now carries the MONTHLY cap (services counts monthly).
+  const aiLimit = ents.aiActions.perMonth ?? 1_000_000
 
   const result = await askQuestion({
     user_id: session.user.id,
     question: trimmed,
     conversation_id: conversationId ?? undefined,
-    limit_per_day: limitPerDay,
+    limit_per_day: aiLimit,
   })
 
   if (!result.ok) {

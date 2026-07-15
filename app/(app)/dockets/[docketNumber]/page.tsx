@@ -268,7 +268,7 @@ export default async function DocketRecordPage({
       getReportedRefs(session.user.id, "deadline"),
     ])
 
-  const qnaLimitPerDay = ents.qa.limitPerDay ?? 0
+  const qnaLimitPerDay = ents.aiActions.perMonth ?? 1_000_000
   const qnaUsedToday   = qnaUsage.ok ? qnaUsage.value.used_today : 0
 
   const metaLine = [

@@ -1,83 +1,79 @@
-// Beta: CAISO+PJM waived for all paid tiers during Beta window.
-// Flip BETA_MARKETS_FREE=false in Railway env to enforce add-on pricing at GA.
-const BETA_MARKETS_FREE = process.env.BETA_MARKETS_FREE !== "false"
+// NodalPulse pricing — single plan, usage-gated (DECIDED 2026-07-14).
+//
+// Markets NEVER gate: every tier includes every market. Revenue expands on USAGE —
+// tracked dockets (primary value gate), AI actions/month (fair-use), seats. Reads are
+// unmetered at every tier. The connector ships on every tier, Free included.
+// Numbers are launch config, validated in 0.1 — not immutable.
+//
+// Supersedes the old per-market model (starter/pro/team/org + market_access add-ons).
 
-export type Tier = "starter" | "pro" | "team" | "org"
+export type Tier = "free" | "pro" | "team" | "org"
 
 export interface EntitlementRow {
   feature: string
   value: Record<string, unknown>
 }
 
-// Texas (PUCT/ERCOT) is the base market for all paid tiers.
-const _TEXAS_MARKETS: EntitlementRow[] = [
-  { feature: "market_access:PUCT",  value: {} },
-  { feature: "market_access:ERCOT", value: {} },
-]
+// Every tier includes every market — adding a market is free value that arrives on
+// its own, not an upsell. getEntitlements grants this to every account (Free too),
+// so market checks always pass and only the docket-limit / AI-quota gate.
+export const ALL_MARKETS = ["PUCT", "ERCOT", "CAISO", "PJM"] as const
 
-// Regional add-ons: +$49 Starter/Pro, +$99 Team — waived during Beta.
-const _REGIONAL_ADDON: EntitlementRow[] = [
-  { feature: "market_access:CAISO", value: {} },
-  { feature: "market_access:PJM",   value: {} },
+// Free is a real tier — the funnel door. It's the default entitlement set for any
+// account with no paid subscription (getEntitlements falls back to it).
+export const FREE_ENTITLEMENTS: EntitlementRow[] = [
+  { feature: "daily_brief",      value: {} },
+  { feature: "tracked_dockets",  value: { limit: 2 } },
+  { feature: "ai_actions",       value: { per_month: 3 } },
+  { feature: "saved_searches",   value: { limit: 1 } },
+  { feature: "brief_history",    value: { days: 30 } },
+  { feature: "team_seats",       value: { limit: 1 } },
+  { feature: "watched_entities", value: { limit: 3 } },
 ]
-
-// Tiers during Beta get all markets; at GA non-org tiers get Texas only.
-const _betaOrTexas = BETA_MARKETS_FREE
-  ? [..._TEXAS_MARKETS, ..._REGIONAL_ADDON]
-  : _TEXAS_MARKETS
 
 export const TIER_ENTITLEMENTS: Record<Tier, EntitlementRow[]> = {
-  starter: [
-    { feature: "daily_brief",      value: {} },
-    { feature: "tracked_dockets",  value: { limit: 5 } },
-    { feature: "saved_searches",   value: { limit: 2 } },
-    { feature: "brief_history",    value: { days: 30 } },
-    { feature: "qa",               value: { limit_per_day: 10 } },
-    { feature: "team_seats",       value: { limit: 1 } },
-    ..._betaOrTexas,
-  ],
+  free: FREE_ENTITLEMENTS,
   pro: [
     { feature: "daily_brief",      value: {} },
-    { feature: "tracked_dockets",  value: { limit: 25 } },
+    { feature: "tracked_dockets",  value: { limit: 15 } },
+    { feature: "ai_actions",       value: { per_month: 200 } },
     { feature: "saved_searches",   value: { limit: 10 } },
     { feature: "brief_history",    value: { days: 365 } },
-    { feature: "qa",               value: { limit_per_day: 30 } },
     { feature: "team_seats",       value: { limit: 1 } },
-    ..._betaOrTexas,
+    { feature: "watched_entities", value: { limit: 15 } },
   ],
   team: [
     { feature: "daily_brief",      value: {} },
-    { feature: "tracked_dockets",  value: { limit: 100 } },
+    { feature: "tracked_dockets",  value: { limit: 40 } },
+    { feature: "ai_actions",       value: { per_month: 1000 } },
     { feature: "saved_searches",   value: { limit: 50 } },
     { feature: "brief_history",    value: { days: 1095 } },
-    { feature: "qa",               value: { limit_per_day: 100 } },
     { feature: "team_seats",       value: { limit: 5 } },
+    { feature: "watched_entities", value: { limit: 50 } },
     { feature: "sla",              value: { uptime: 0.995 } },
-    ..._betaOrTexas,
   ],
   org: [
     { feature: "daily_brief",      value: {} },
-    { feature: "tracked_dockets",  value: { limit: null } },
+    { feature: "tracked_dockets",  value: { limit: null } },      // null = unlimited
+    { feature: "ai_actions",       value: { per_month: null } },  // null = unlimited
     { feature: "saved_searches",   value: { limit: null } },
     { feature: "brief_history",    value: { days: null } },
-    { feature: "qa",               value: { limit_per_day: 300 } },
     { feature: "team_seats",       value: { limit: 25 } },
+    { feature: "watched_entities", value: { limit: null } },
     { feature: "sla",              value: { uptime: 0.999 } },
     { feature: "audit_export",     value: {} },
     { feature: "api_access",       value: {} },
-    // Org always includes all markets, regardless of Beta flag.
-    ..._TEXAS_MARKETS,
-    ..._REGIONAL_ADDON,
   ],
 }
 
+// Stripe price IDs → tier. Free needs no Stripe (it's $0 / no subscription); Org is
+// quote-only. Set STRIPE_PRICE_PRO / STRIPE_PRICE_TEAM once the products exist.
 export function resolveTier(priceId: string): Tier | null {
   if (!priceId) return null
   const candidates: [string | undefined, Tier][] = [
-    [process.env.STRIPE_PRICE_STARTER, "starter"],
-    [process.env.STRIPE_PRICE_PRO,     "pro"],
-    [process.env.STRIPE_PRICE_TEAM,    "team"],
-    [process.env.STRIPE_PRICE_ORG,     "org"],
+    [process.env.STRIPE_PRICE_PRO,  "pro"],
+    [process.env.STRIPE_PRICE_TEAM, "team"],
+    [process.env.STRIPE_PRICE_ORG,  "org"],
   ]
   for (const [envVal, tier] of candidates) {
     if (envVal && envVal === priceId) return tier
@@ -86,38 +82,7 @@ export function resolveTier(priceId: string): Tier | null {
 }
 
 // ---------------------------------------------------------------------------
-// Market add-on SKUs
-// CAISO: live. PJM: infra ready, dark until #126 pre-GA verifications pass.
-// Each env var maps to a market code that becomes market_access:<MARKET>.
-// ---------------------------------------------------------------------------
-
-// Map market code → env var name that holds its Stripe add-on price ID.
-// PJM is intentionally commented out — add the env var and uncomment when ready.
-const ADDON_MARKET_ENV: Record<string, string> = {
-  CAISO: "STRIPE_PRICE_ADDON_CAISO",
-  // PJM: "STRIPE_PRICE_ADDON_PJM",
-}
-
-/** Returns the market code (e.g. "CAISO") if priceId is a known add-on, else null. */
-export function resolveAddonMarket(priceId: string): string | null {
-  if (!priceId) return null
-  for (const [market, envKey] of Object.entries(ADDON_MARKET_ENV)) {
-    const envVal = process.env[envKey]
-    if (envVal && envVal === priceId) return market
-  }
-  return null
-}
-
-/** Returns the configured price ID for a market add-on, or null if not configured / dark. */
-export function addonPriceId(market: string): string | null {
-  const envKey = ADDON_MARKET_ENV[market]
-  if (!envKey) return null
-  return process.env[envKey] ?? null
-}
-
-// ---------------------------------------------------------------------------
-// Display data — consumed by /pricing page; derived from TIER_ENTITLEMENTS
-// so the two cannot diverge.
+// Display data — consumed by /pricing; derived here so the two can't diverge.
 // ---------------------------------------------------------------------------
 
 export interface TierDisplay {
@@ -130,68 +95,66 @@ export interface TierDisplay {
 }
 
 export const TIER_DISPLAY: TierDisplay[] = [
-  { tier: "starter", name: "Starter", price: "$99",    period: "/mo", highlight: false, contactOnly: false },
-  { tier: "pro",     name: "Pro",     price: "$249",   period: "/mo", highlight: true,  contactOnly: false },
-  { tier: "team",    name: "Team",    price: "$749",   period: "/mo", highlight: false, contactOnly: false },
-  { tier: "org",     name: "Org",     price: "$1,999", period: "/mo", highlight: false, contactOnly: true  },
+  { tier: "free", name: "Free", price: "$0",     period: "",    highlight: false, contactOnly: false },
+  { tier: "pro",  name: "Pro",  price: "$219",   period: "/mo", highlight: true,  contactOnly: false },
+  { tier: "team", name: "Team", price: "$850",   period: "/mo", highlight: false, contactOnly: false },
+  { tier: "org",  name: "Org",  price: "Custom", period: "",    highlight: false, contactOnly: true  },
 ]
 
 export interface FeatureRow {
   label: string
-  values: Record<"free" | Tier, string>
+  values: Record<Tier, string>
   note?: string
 }
 
-// During beta all tiers carry all markets; after GA the base covers 1 market of
-// the buyer's choice and additional markets are +$39/$49/$99 add-ons.
-const _marketLabel = BETA_MARKETS_FREE
-  ? "All markets (Beta)"
-  : "1 market of your choice"
-
-const _marketNote = BETA_MARKETS_FREE
-  ? undefined
-  : "Additional markets from $39/mo — add in-app after signup"
-
 export const FEATURE_MATRIX: FeatureRow[] = [
   {
-    label: "Daily brief",
-    values: { free: "Public digest only", starter: "Personalized", pro: "Personalized", team: "Personalized", org: "Personalized" },
-  },
-  {
     label: "Markets",
-    values: { free: "—", starter: _marketLabel, pro: _marketLabel, team: _marketLabel, org: "All markets" },
-    note: _marketNote,
+    values: { free: "All included", pro: "All included", team: "All included", org: "All included" },
+    note: "Every market — ERCOT, CAISO, PJM and more — is included on every plan. New markets arrive free.",
   },
   {
     label: "Tracked dockets",
-    values: { free: "—", starter: "5", pro: "25", team: "100", org: "Unlimited" },
+    values: { free: "2", pro: "15", team: "40", org: "Unlimited" },
+  },
+  {
+    label: "AI actions (Ask the Record + summaries)",
+    values: { free: "3 / mo", pro: "200 / mo", team: "1,000 / mo", org: "Custom" },
+  },
+  {
+    label: "Connector (Claude / ChatGPT)",
+    values: { free: "✓", pro: "✓", team: "✓", org: "✓ priority" },
+  },
+  {
+    label: "Daily brief",
+    values: { free: "✓", pro: "✓", team: "✓", org: "✓" },
+  },
+  {
+    label: "Watched entities",
+    values: { free: "3", pro: "15", team: "50", org: "Unlimited" },
   },
   {
     label: "Saved searches",
-    values: { free: "—", starter: "2", pro: "10", team: "50", org: "Unlimited" },
+    values: { free: "1", pro: "10", team: "50", org: "Unlimited" },
   },
   {
     label: "Brief history",
-    values: { free: "—", starter: "30 days", pro: "1 year", team: "3 years", org: "Unlimited" },
-  },
-  {
-    label: "Q&A",
-    values: { free: "—", starter: "10 q/day", pro: "30 q/day", team: "100 q/day", org: "300 q/day" },
+    values: { free: "30 days", pro: "1 year", team: "3 years", org: "Unlimited" },
   },
   {
     label: "Team seats",
-    values: { free: "—", starter: "1", pro: "1", team: "5", org: "25" },
+    values: { free: "1", pro: "1", team: "5", org: "25+" },
   },
   {
     label: "Audit export",
-    values: { free: "—", starter: "—", pro: "—", team: "—", org: "✓" },
+    values: { free: "—", pro: "—", team: "—", org: "✓" },
   },
   {
-    label: "API access",
-    values: { free: "—", starter: "—", pro: "—", team: "—", org: "✓" },
+    label: "API + branded platform",
+    values: { free: "—", pro: "—", team: "—", org: "✓" },
   },
   {
     label: "SLA",
-    values: { free: "—", starter: "—", pro: "—", team: "99.5%", org: "99.9%" },
+    values: { free: "—", pro: "—", team: "99.5%", org: "99.9%" },
   },
 ]
